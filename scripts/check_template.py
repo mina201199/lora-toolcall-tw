@@ -31,38 +31,103 @@ from twagent.tools.schemas import TOOLS
 
 TODAY = date(2026, 9, 23)
 CALL = ToolCall("get_weather", {"city": "臺中市", "date": "2026-09-24"})
+CALL_2 = ToolCall("get_weather", {"city": "高雄市", "date": "2026-09-24"})
 RESULT = json.dumps({"city": "臺中市", "condition": "多雲"}, ensure_ascii=False)
+RESULT_2 = json.dumps({"city": "高雄市", "condition": "晴"}, ensure_ascii=False)
+
+
+def _official_call(calls: list[ToolCall], content: str = "") -> dict:
+    return {
+        "role": "assistant",
+        "content": content,
+        "tool_calls": [
+            {
+                "id": f"call_{i}",
+                "type": "function",
+                "function": {
+                    "name": c.name,
+                    "arguments": json.dumps(c.arguments, ensure_ascii=False),
+                },
+            }
+            for i, c in enumerate(calls)
+        ],
+    }
+
+
+def _ours_call(calls: list[ToolCall], content: str = "") -> dict:
+    rendered = render_tool_calls(calls)
+    return {"role": "assistant", "content": f"{content}\n{rendered}" if content else rendered}
 
 
 def scenarios() -> dict[str, tuple[dict, dict]]:
     user = {"role": "user", "content": "明天台中會下雨嗎"}
     official_system = {"role": "system", "content": build_persona(TODAY)}
     ours_system = {"role": "system", "content": build_system_prompt(TODAY)}
-    official_call = {
-        "role": "assistant",
-        "content": "",
-        "tool_calls": [
-            {
-                "id": "call_0",
-                "type": "function",
-                "function": {
-                    "name": CALL.name,
-                    "arguments": json.dumps(CALL.arguments, ensure_ascii=False),
-                },
-            }
-        ],
-    }
-    ours_call = {"role": "assistant", "content": render_tool_calls([CALL])}
-    tool_msg = {"role": "tool", "tool_call_id": "call_0", "content": RESULT}
-    ours_tool = {"role": "tool", "content": RESULT}
+
+    def tool(content: str, i: int, official: bool) -> dict:
+        msg = {"role": "tool", "content": content}
+        if official:
+            msg["tool_call_id"] = f"call_{i}"
+        return msg
+
+    both = [CALL, CALL_2]
+    answer = {"role": "assistant", "content": "明天臺中多雲。"}
+    follow_up = {"role": "user", "content": "那後天呢？"}
     return {
         "first_turn": (
             {"messages": [official_system, user], "tools": TOOLS},
             {"messages": [ours_system, user]},
         ),
         "after_tool_call": (
-            {"messages": [official_system, user, official_call, tool_msg], "tools": TOOLS},
-            {"messages": [ours_system, user, ours_call, ours_tool]},
+            {
+                "messages": [official_system, user, _official_call([CALL]), tool(RESULT, 0, True)],
+                "tools": TOOLS,
+            },
+            {"messages": [ours_system, user, _ours_call([CALL]), tool(RESULT, 0, False)]},
+        ),
+        "parallel_calls": (
+            {
+                "messages": [
+                    official_system,
+                    user,
+                    _official_call(both),
+                    tool(RESULT, 0, True),
+                    tool(RESULT_2, 1, True),
+                ],
+                "tools": TOOLS,
+            },
+            {
+                "messages": [
+                    ours_system,
+                    user,
+                    _ours_call(both),
+                    tool(RESULT, 0, False),
+                    tool(RESULT_2, 1, False),
+                ]
+            },
+        ),
+        "text_call_answer_followup": (
+            {
+                "messages": [
+                    official_system,
+                    user,
+                    _official_call([CALL], "我幫你查一下。"),
+                    tool(RESULT, 0, True),
+                    answer,
+                    follow_up,
+                ],
+                "tools": TOOLS,
+            },
+            {
+                "messages": [
+                    ours_system,
+                    user,
+                    _ours_call([CALL], "我幫你查一下。"),
+                    tool(RESULT, 0, False),
+                    answer,
+                    follow_up,
+                ]
+            },
         ),
     }
 
