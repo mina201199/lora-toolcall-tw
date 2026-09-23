@@ -168,12 +168,15 @@ def synthesize(
     batch_size: int,
     spent_usd: Callable[[], float],
     budget_usd: float,
+    on_progress: Callable[[], None] | None = None,
 ) -> SynthReport:
     """Append one record per scenario to `out_path`.
 
     Stops before a batch would start at or past the budget, or after
     `MAX_CONSECUTIVE_LLM_ERRORS` LLM failures in a row. A partial last line
     left by a killed run is removed first, so that scenario is redone.
+    `on_progress` is called after every batch, once its records are written
+    (also for a batch that produced only failures), e.g. to checkpoint spend.
     """
     repaired = repair_partial_tail(out_path)
     done = {r["scenario"]["id"] for r in load_records(out_path)}
@@ -209,6 +212,8 @@ def synthesize(
                     f.flush()
                     report.written += 1
                     failures = 0
+            if on_progress is not None:
+                on_progress()
             if failures >= MAX_CONSECUTIVE_LLM_ERRORS:
                 report.stopped = "llm_error"
                 break

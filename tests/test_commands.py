@@ -84,6 +84,61 @@ def test_resumed_run_accumulates_spend(fake_gpt, tmp_path):
     assert ledger["spent_usd"] > first and len(ledger["runs"]) == 2
 
 
+class CrashingGPT(FakeGPT):
+    """A FakeGPT whose teacher dies with a non-LLM error on its 13th trajectory."""
+
+    teacher_calls = 0
+
+    def complete(self, messages):
+        if messages[0]["role"] == "system":
+            CrashingGPT.teacher_calls += 1
+            if CrashingGPT.teacher_calls > 12:
+                raise RuntimeError("boom")
+        return super().complete(messages)
+
+
+def test_ledger_survives_a_crash_and_resume_accumulates(fake_gpt, monkeypatch, tmp_path):
+    out = tmp_path / "raw.jsonl"
+    ledger_path = tmp_path / "raw.jsonl.cost.json"
+    CrashingGPT.teacher_calls = 0
+    monkeypatch.setattr(commands, "GPTClient", CrashingGPT)
+    argv = ["synth", "--total", "30", "--out", str(out), "--config", CONFIG]
+    with pytest.raises(RuntimeError, match="boom"):
+        cli.main(argv)
+    on_disk = len(out.read_text(encoding="utf-8").splitlines())
+    assert on_disk == 12  # one full batch of 10, then 2 of the next
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert ledger["spent_usd"] > 0
+    assert len(ledger["runs"]) == 1 and ledger["runs"][0]["written"] == on_disk
+    assert ledger["runs"][0]["cost_usd"] == ledger["spent_usd"]
+    assert not ledger_path.with_name(ledger_path.name + ".tmp").exists()
+
+    monkeypatch.setattr(commands, "GPTClient", FakeGPT)
+    assert cli.main(argv) == 0
+    resumed = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert resumed["spent_usd"] > ledger["spent_usd"]
+    assert [r["written"] for r in resumed["runs"]] == [12, 18]
+    assert resumed["runs"][0] == ledger["runs"][0]
+
+
+def test_ledger_is_checkpointed_after_every_batch(fake_gpt, monkeypatch, tmp_path):
+    out = tmp_path / "raw.jsonl"
+    seen = []
+    real = commands.synthesize
+
+    def spy(*args, on_progress, **kwargs):
+        def progress():
+            on_progress()
+            ledger = json.loads((tmp_path / "raw.jsonl.cost.json").read_text(encoding="utf-8"))
+            seen.append(ledger["runs"][-1]["written"])
+
+        return real(*args, on_progress=progress, **kwargs)
+
+    monkeypatch.setattr(commands, "synthesize", spy)
+    cli.main(["synth", "--total", "25", "--out", str(out), "--config", CONFIG])
+    assert seen == [10, 20, 25]
+
+
 def test_budget_stops_before_spending(fake_gpt, tmp_path, capsys):
     out = tmp_path / "raw.jsonl"
     cli.main(["synth", "--total", "10", "--budget", "0", "--out", str(out), "--config", CONFIG])

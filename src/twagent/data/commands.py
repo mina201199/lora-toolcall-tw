@@ -6,7 +6,9 @@
 
 The API key comes from the environment or a git-ignored `.env` file; this
 code never prints or stores it. Spend is tracked in `<out>.cost.json` across
-resumed runs, and a run stops before its batch would start past the budget.
+resumed runs -- checkpointed after every batch and on any exit, so a crash
+does not lose spend -- and a run stops before its batch would start past
+the budget.
 """
 
 from __future__ import annotations
@@ -48,6 +50,40 @@ def _read_ledger(path: Path) -> dict[str, Any]:
     return {"spent_usd": 0.0, "runs": []}
 
 
+def _write_ledger(path: Path, ledger: dict[str, Any]) -> None:
+    """Write via a temp file and `os.replace`, so a kill never leaves half a ledger."""
+    tmp = path.with_name(path.name + ".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+class _NewRecords:
+    """Counts records (complete lines) appended to a JSONL file since creation.
+
+    Reads only the bytes added since the previous count, so checkpointing
+    after every batch stays cheap on a large file. A partial last line is not
+    counted and not skipped over: `synthesize` truncates it away and appends
+    from exactly that offset.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path, self.offset, self.lines = path, 0, 0
+        self.base = self._advance()
+
+    def _advance(self) -> int:
+        if self.path.exists():
+            with open(self.path, "rb") as f:
+                f.seek(self.offset)
+                data = f.read()
+            self.lines += data.count(b"\n")
+            self.offset += data.rfind(b"\n") + 1
+        return self.lines
+
+    def count(self) -> int:
+        return self._advance() - self.base
+
+
 def cmd_synth(args: argparse.Namespace) -> int:
     cfg = load_config(args.config).synth
     load_dotenv(Path(".env"))
@@ -72,30 +108,34 @@ def cmd_synth(args: argparse.Namespace) -> int:
     ledger_path = out.with_name(out.name + ".cost.json")
     ledger = _read_ledger(ledger_path)
     previous = ledger["spent_usd"]
+    run: dict[str, Any] = {"model": model}
+    ledger["runs"].append(run)  # updated in place at every checkpoint
+    new_records = _NewRecords(out)
 
     def spent() -> float:
         return previous + teacher.usage.cost_usd(price) + query.usage.cost_usd(price)
 
-    report = synthesize(
-        scenarios,
-        query_llm=query,
-        teacher=teacher,
-        out_path=out,
-        batch_size=cfg.query_batch_size,
-        spent_usd=spent,
-        budget_usd=budget,
-    )
-    ledger["spent_usd"] = round(spent(), 6)
-    ledger["runs"].append(
-        {
-            "model": model,
-            "written": report.written,
-            "cost_usd": round(spent() - previous, 6),
-            "teacher_usage": vars(teacher.usage),
-            "query_usage": vars(query.usage),
-        }
-    )
-    ledger_path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+    def checkpoint() -> None:
+        ledger["spent_usd"] = round(spent(), 6)
+        run["written"] = new_records.count()
+        run["cost_usd"] = round(spent() - previous, 6)
+        run["teacher_usage"] = dict(vars(teacher.usage))
+        run["query_usage"] = dict(vars(query.usage))
+        _write_ledger(ledger_path, ledger)
+
+    try:
+        report = synthesize(
+            scenarios,
+            query_llm=query,
+            teacher=teacher,
+            out_path=out,
+            batch_size=cfg.query_batch_size,
+            spent_usd=spent,
+            budget_usd=budget,
+            on_progress=checkpoint,
+        )
+    finally:
+        checkpoint()  # an exception or Ctrl-C still records what was spent
 
     if report.repaired_bytes:
         print(f"WARNING repaired {out}: dropped a partial last line ({report.repaired_bytes} "

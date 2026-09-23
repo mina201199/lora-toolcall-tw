@@ -261,3 +261,34 @@ def test_intact_file_is_not_touched(tmp_path):
         budget_usd=1.0,
     )
     assert report.repaired_bytes == 0
+
+
+def test_on_progress_runs_after_every_batch_including_failed_ones(tmp_path):
+    out = tmp_path / "raw.jsonl"
+    lines_at_progress = []
+
+    def progress():
+        lines_at_progress.append(len(load_records(out)))
+
+    class FirstQueryFails:
+        def __init__(self):
+            self.inner, self.calls = all_queries(CHAT), 0
+
+        def complete(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                raise LLMError("down")
+            return self.inner.complete(messages)
+
+    report = synthesize(
+        [WEATHER, CHAT],
+        query_llm=FirstQueryFails(),
+        teacher=ScriptedLLM(["你好！"]),
+        out_path=out,
+        batch_size=1,
+        spent_usd=lambda: 0.0,
+        budget_usd=1.0,
+        on_progress=progress,
+    )
+    assert (report.written, report.missing_queries) == (1, 1)
+    assert lines_at_progress == [0, 1]
