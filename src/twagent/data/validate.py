@@ -30,18 +30,27 @@ from .scenarios import Scenario
 _BAD_EVENTS = {"parse_error", "schema_error", "llm_error", "fallback"}
 _S2TWP = OpenCC("s2twp")
 
+# Correct Taiwanese words that OpenCC's s2twp nonetheless rewrites (the pilot
+# rejected these): 查看→檢視, 濃郁→濃鬱.
+TW_OK_WORDS = ("查看", "濃郁")
+
 
 def wording_problem(text: str) -> str | None:
     """A snippet showing simplified/mainland wording, or None if clean.
 
     台 vs 臺 is not a problem (both are Taiwanese usage), so it is normalised
-    before the comparison.
+    before the comparison. Allowlisted words (`TW_OK_WORDS`) are masked with
+    "□" placeholders first, so OpenCC's s2twp cannot flag them as mainland
+    wording while the rest of the snippet logic still runs unchanged.
     """
     normalised = text.replace("台", "臺")
-    converted = _S2TWP.convert(normalised)
-    if converted == normalised:
+    masked = normalised
+    for word in TW_OK_WORDS:
+        masked = masked.replace(word, "□" * len(word))
+    converted = _S2TWP.convert(masked)
+    if converted == masked:
         return None
-    for i, (a, b) in enumerate(zip(normalised, converted, strict=False)):
+    for i, (a, b) in enumerate(zip(masked, converted, strict=False)):
         if a != b:
             return f"{normalised[max(0, i - 4) : i + 4]} -> {converted[max(0, i - 4) : i + 4]}"
     return f"{normalised[-8:]} -> {converted[-8:]}"

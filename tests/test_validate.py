@@ -125,6 +125,12 @@ def test_wording_accepts_taiwanese(text):
     assert wording_problem(text) is None
 
 
+@pytest.mark.parametrize("text", ["幫我查看今天的行程", "濃郁的湯頭"])
+def test_wording_allowlist_taiwanese_opencc_rewrites(text):
+    # The pilot rejected correct Taiwanese text: 查看→檢視 and 濃郁→濃鬱.
+    assert wording_problem(text) is None
+
+
 def test_reason_key():
     assert reason_key("date: 明天 should be x, got y") == "date"
     assert reason_key("empty final reply") == "empty final reply"
