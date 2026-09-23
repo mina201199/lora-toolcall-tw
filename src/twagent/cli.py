@@ -2,6 +2,8 @@
 
 twagent check-cases data/handwritten_test.jsonl
 twagent chat "明天台中會下雨嗎" [--today 2026-09-23] [--base-url URL] [--json]
+twagent synth --pilot 50 | --total N      (see twagent.data.commands)
+twagent build-dataset
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from pathlib import Path
 from twagent.agent import run_agent
 from twagent.cases import load_cases
 from twagent.config import load_config
+from twagent.data import commands as data_commands
 from twagent.llm import OpenAICompatClient
 from twagent.prompting import build_system_prompt
 from twagent.tools.mock import MockTools
@@ -85,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--base-url", help="override llm.base_url")
     p.add_argument("--json", action="store_true", help="print the full result as JSON")
     p.set_defaults(func=_chat)
+
+    data_commands.add_parsers(sub, DEFAULT_CONFIG)
 
     args = parser.parse_args(argv)
     return args.func(args)
