@@ -117,3 +117,10 @@ def test_group_ignores_today_and_date():
     )
     b = Scenario("b", "single", ("get_weather",), "口語隨興", a.today.replace(month=1), "後天")
     assert a.group == b.group == "single|get_weather|口語隨興"
+
+
+def test_date_expr_never_points_to_the_past():
+    dated = [s for s in build_scenarios(600, seed=2) if s.date_expr is not None]
+    assert len(dated) > 200
+    for s in dated:
+        assert resolve_date_expr(s.date_expr, s.today) >= s.today, s

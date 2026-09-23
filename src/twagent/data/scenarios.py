@@ -19,6 +19,8 @@ from datetime import date, timedelta
 from itertools import islice
 from typing import Any
 
+from twagent.dates import resolve_date_expr
+
 CATEGORY_SHARE = {
     "single": 0.35,
     "parallel": 0.15,
@@ -130,6 +132,11 @@ def _cells(category: str) -> list[tuple[tuple[str, ...], str, str]]:
     return [(combo, "", style) for combo in COMBOS[category] for style in STYLES]
 
 
+def _future_date_exprs(today: date) -> list[str]:
+    """DATE_EXPRS that resolve to `today` or later (e.g. not 這週五 on a Saturday)."""
+    return [e for e in DATE_EXPRS if resolve_date_expr(e, today) >= today]
+
+
 def build_scenarios(total: int, seed: int) -> list[Scenario]:
     """The first `total` items of one deterministic scenario stream for `seed`.
 
@@ -154,14 +161,15 @@ def build_scenarios(total: int, seed: int) -> list[Scenario]:
         used[category] += 1
         # clarify asks the user to leave a required detail (often the date) out.
         dated = category != "clarify" and any(t in DATED_TOOLS for t in tools)
+        today = year_start + timedelta(days=rng.randrange(365))
         out.append(
             Scenario(
                 id=f"s{len(out):05d}",
                 category=category,
                 tools=tools,
                 style=style,
-                today=year_start + timedelta(days=rng.randrange(365)),
-                date_expr=rng.choice(DATE_EXPRS) if dated else None,
+                today=today,
+                date_expr=rng.choice(_future_date_exprs(today)) if dated else None,
                 kind=kind,
                 failure=rng.choice(FAILURES) if category == "tool_error" else "",
             )
