@@ -140,6 +140,27 @@ def test_impossible_date_does_not_crash_and_is_fed_back_as_schema_error():
     assert any("not a real date" in d for d in feedback["details"])
 
 
+def test_mixed_valid_invalid_turn_executes_nothing():
+    tools = MockTools()
+    valid_calendar = call(
+        "calendar_add", title="看牙醫", start="2026-09-24T14:00", end="2026-09-24T15:00"
+    )
+    invalid_weather = call("get_weather", city="台中", date="明天")
+    mixed = valid_calendar + "\n" + invalid_weather
+    corrected = valid_calendar + "\n" + WEATHER
+    llm = ScriptedLLM([mixed, corrected, "已經幫你排好了，明天臺中多雲。"])
+    r = run(llm, tools=tools)
+    assert r.stopped_reason == "answer"
+    assert [e["title"] for e in tools.events()] == ["看牙醫"]
+    assert [c.name for c in r.tool_calls].count("calendar_add") == 1
+
+    first_turn_tool_messages = [m for m in llm.calls[1] if m["role"] == "tool"]
+    assert len(first_turn_tool_messages) == 2
+    assert "未執行" in first_turn_tool_messages[0]["content"]
+    invalid_payload = json.loads(first_turn_tool_messages[1]["content"])
+    assert invalid_payload["error"] == "參數驗證失敗" and invalid_payload["details"]
+
+
 def test_schema_retries_exhausted():
     wrong = call("get_weather", city="台中", date="明天")
     r = run(ScriptedLLM([wrong] * 3))

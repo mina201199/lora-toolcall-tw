@@ -127,15 +127,23 @@ def run_agent(
         messages.append(
             {"role": "assistant", "content": _assistant_content(parsed.text, parsed.tool_calls)}
         )
-        any_invalid = False
-        for call in parsed.tool_calls:
-            errors = validate_arguments(call.name, call.arguments)
+        # Validate every call in the turn before executing any of them: running
+        # half of what the model meant (the valid calls) while the rest is
+        # rejected is worse than asking the whole batch to be resent, and it
+        # would double-execute the valid calls once the model corrects and
+        # resends the turn.
+        validated = [
+            (call, validate_arguments(call.name, call.arguments)) for call in parsed.tool_calls
+        ]
+        any_invalid = any(errors for _, errors in validated)
+        for call, errors in validated:
             if errors:
-                any_invalid = True
                 result.trace.append(
                     TraceEvent("schema_error", {"call": call.to_dict(), "errors": errors})
                 )
                 payload: dict[str, Any] = {"error": "參數驗證失敗", "details": errors}
+            elif any_invalid:
+                payload = {"error": "未執行：同一輪有其他工具呼叫的參數錯誤，請修正後整批重新送出"}
             else:
                 try:
                     payload = tools.call(call.name, call.arguments)
