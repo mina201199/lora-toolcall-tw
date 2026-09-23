@@ -84,6 +84,26 @@ def test_valid_calls(name, args):
             {"title": "x", "start": "2026-09-24 14:00", "end": "2026-09-24T15:00"},
             "start",
         ),
+        (
+            "get_weather",
+            {"city": "臺中市", "date": "2026-02-30"},
+            "date: 2026-02-30 is not a real date/time",
+        ),
+        (
+            "calendar_add",
+            {"title": "x", "start": "2026-02-30T10:00", "end": "2026-09-24T15:00"},
+            "start: 2026-02-30T10:00 is not a real date/time",
+        ),
+        (
+            "calendar_add",
+            {"title": "x", "start": "2026-09-24T15:00", "end": "2026-09-24T15:00"},
+            "end: must be later than start",
+        ),
+        (
+            "calendar_add",
+            {"title": "x", "start": "2026-09-24T15:00", "end": "2026-09-24T14:00"},
+            "end: must be later than start",
+        ),
     ],
 )
 def test_invalid_calls(name, args, fragment):

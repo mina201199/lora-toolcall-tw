@@ -9,6 +9,7 @@ Enum values use the official 臺 spelling; teaching the model to normalise
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -156,4 +157,39 @@ def validate_arguments(name: str, arguments: Any) -> list[str]:
     for e in errors:
         where = ".".join(str(p) for p in e.path) or "(root)"
         out.append(f"{where}: {e.message}")
+    if out:
+        return out
+    return _semantic_errors(name, arguments)
+
+
+def _semantic_errors(name: str, arguments: dict[str, Any]) -> list[str]:
+    """Checks the JSON Schema pass cannot express: real calendar dates, and
+    `calendar_add.end` being later than `start`. Only run once the arguments
+    already match their JSON Schema (right types/patterns), so `.get`/casts
+    below are safe.
+    """
+    properties = _BY_NAME[name]["function"]["parameters"]["properties"]
+    out = []
+    for prop, value in arguments.items():
+        schema = properties.get(prop)
+        if schema is DATE:
+            try:
+                date.fromisoformat(value)
+            except ValueError:
+                out.append(f"{prop}: {value} is not a real date/time")
+        elif schema is DATETIME:
+            try:
+                datetime.fromisoformat(value)
+            except ValueError:
+                out.append(f"{prop}: {value} is not a real date/time")
+    if out:
+        return out
+    if name == "calendar_add":
+        start, end = arguments.get("start"), arguments.get("end")
+        if (
+            start is not None
+            and end is not None
+            and datetime.fromisoformat(end) <= datetime.fromisoformat(start)
+        ):
+            out.append("end: must be later than start")
     return out

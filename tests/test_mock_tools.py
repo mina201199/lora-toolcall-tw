@@ -78,6 +78,13 @@ def test_calendar_rejects_end_before_start():
         )
 
 
+def test_handler_value_error_surfaces_as_tool_error():
+    with pytest.raises(ToolError):
+        MockTools().call(
+            "calendar_add", {"title": "x", "start": "not-a-date", "end": "2026-09-24T15:00"}
+        )
+
+
 def test_injected_failure():
     tools = MockTools(failures={"search_thsr": "連線逾時"})
     with pytest.raises(ToolError, match="連線逾時"):

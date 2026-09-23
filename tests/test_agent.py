@@ -130,6 +130,16 @@ def test_schema_error_is_fed_back_and_corrected():
     assert feedback["error"] == "參數驗證失敗" and feedback["details"]
 
 
+def test_impossible_date_does_not_crash_and_is_fed_back_as_schema_error():
+    bad = call("calendar_add", title="x", start="2026-02-30T10:00", end="2026-09-24T15:00")
+    llm = ScriptedLLM([bad, WEATHER, "多雲"])
+    r = run(llm)
+    assert r.stopped_reason == "answer"
+    feedback = json.loads(llm.calls[1][-1]["content"])
+    assert feedback["error"] == "參數驗證失敗"
+    assert any("not a real date" in d for d in feedback["details"])
+
+
 def test_schema_retries_exhausted():
     wrong = call("get_weather", city="台中", date="明天")
     r = run(ScriptedLLM([wrong] * 3))

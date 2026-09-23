@@ -55,7 +55,10 @@ class MockTools:
         handler = getattr(self, f"_{name}", None)
         if handler is None:
             raise ToolError(f"unknown tool: {name}")
-        return handler(dict(arguments), _rng(name, arguments))
+        try:
+            return handler(dict(arguments), _rng(name, arguments))
+        except ValueError as e:
+            raise ToolError(str(e)) from e
 
     def events(self) -> list[dict[str, Any]]:
         """Final calendar state, for end-to-end scoring."""
