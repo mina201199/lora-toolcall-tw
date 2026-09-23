@@ -44,7 +44,7 @@
 | 工具呼叫格式 | Qwen 原生 chat template 的 `<tool_call>{...}</tool_call>` 格式 |
 | 訓練 | Unsloth QLoRA，Kaggle（每週 30 小時 T4）或 Colab 免費 T4，fp16（T4 不支援 bf16） |
 | 部署 | 合併 LoRA → GGUF → 量化；本機 llama.cpp（`llama-server`）＋ FastAPI ＋ Docker |
-| 資料 | Claude API 合成，預算 5–15 美元；先小批量實測成本再放大 |
+| 資料 | OpenAI API（GPT）合成，預算 5–15 美元；先小批量實測成本再放大 |
 | 場景 | 台灣生活助理：天氣、高鐵、台鐵、YouBike、發票、行事曆 |
 | 範圍 | 完整版，4 週 |
 | 約束解碼 | llama.cpp GBNF 語法約束，作為**對照實驗**而非預設 |
@@ -55,7 +55,7 @@
 
 ```
 ┌──────────── 訓練端（Kaggle / Colab T4）────────────┐
-│ 工具定義 → Claude 合成 → 驗證過濾 → 分組切分 → 資料集 │
+│ 工具定義 → GPT    合成 → 驗證過濾 → 分組切分 → 資料集 │
 │                                   ↓                │
 │                  Unsloth QLoRA 微調 Qwen            │
 │                                   ↓                │
@@ -66,7 +66,7 @@
 │  web（並排對照） ⇄  api（FastAPI）  ⇄  llama-server   │
 │                        ↓                            │
 │             工具執行層：mock / live                   │
-│             失敗時可選擇退回 Claude                   │
+│             失敗時可選擇退回 GPT                      │
 └────────────────────────────────────────────────────┘
 ```
 
@@ -84,13 +84,14 @@ lora-toolcall-tw/
 │   │   └── registry.py  依 TOOLS_MODE 選擇實作
 │   ├── dates.py         相對日期與民國期別的換算（今天日期由外部注入）
 │   ├── data/
-│   │   ├── synth.py     組裝合成請求、呼叫 Claude
+│   │   ├── synth.py     組裝合成請求、呼叫 GPT
 │   │   ├── validate.py  schema、列舉、日期、簡繁、近似重複檢查
 │   │   ├── splits.py    分組切分 ＋ 洩漏護欄（SplitResult.__post_init__）
 │   │   └── format.py    轉成 Qwen chat template 的訓練樣本
 │   ├── parsing.py       唯一的 <tool_call> 解析器
 │   ├── agent.py         唯一的 Agent 迴圈
-│   ├── llm.py           LLM 客戶端介面（OpenAI 相容；llama-server 與 Claude 各一實作）
+│   ├── llm.py           LLM 客戶端介面（OpenAI 相容；llama-server 一份（llm.py）、OpenAI 一份（gpt.py））
+│   ├── gpt.py           OpenAI GPT 客戶端實作
 │   ├── metrics.py       指標 ＋ sanity checks
 │   ├── evaluation.py    跑對照組、輸出報告
 │   │  ── 加速層（延遲 import，只在 GPU 機器上用）──
@@ -114,7 +115,7 @@ lora-toolcall-tw/
 
 1. **純邏輯層與加速層分離**（沿用 astro-vlm-lora）：資料驗證、解析、Agent 迴圈、指標全部能在 CPU 上測試。
 2. **推論只有一條路徑**：`parsing.py` 與 `agent.py` 各只有一份，評估程式與 FastAPI 服務都呼叫它們。
-3. **工具層與模型層解耦**：`llm.py` 使用 OpenAI 相容介面，切換 llama-server / Claude 只改 `base_url` 與金鑰。
+3. **工具層與模型層解耦**：llama-server 與 OpenAI 共用同一套訊息格式與 LLMClient 協定，切換只換客戶端與金鑰。
 4. **mock 與 live 分離**：評估一律用 mock（結果可重現）；demo 才用 live。
 5. **設定即紀錄**：`configs/default.yaml` 完整嵌入每份報告。
 
@@ -151,30 +152,32 @@ lora-toolcall-tw/
 | 不需工具 / 不支援 | 15% | 閒聊；「幫我訂機票」→ 說明做不到 |
 | 工具錯誤處理 | 5% | 工具回傳逾時 → 告知使用者 |
 
-### 5.2 合成流程
+### 5.2 合成流程（Plan 2 修訂：老師示範軌跡）
 
-1. **情境矩陣**：資料類型 × 工具組合 × 說話風格（口語、錯字、中英夾雜、冗長）× 模板編號。
-2. **Claude 產生**「使用者問題 ＋ 標準答案工具呼叫」（要求結構化 JSON 輸出）。
-3. **程式執行 mock 工具**產生工具結果——不讓 LLM 編造工具結果，確保一致。
-4. **Claude 根據工具結果**寫最終回覆（繁中、台灣用語）。
-5. **驗證**（`data/validate.py`），任一項失敗即丟棄並計數：
-   - 參數符合 JSON Schema、列舉值合法
-   - 日期與期別換算正確（以 `dates.py` 重算比對）
-   - OpenCC `s2twp` 檢查：轉換前後不一致即視為含簡體字或中國用語
-   - MinHash 近似重複去除
-6. **分組切分**（見 5.3）。
-7. **格式化**為 Qwen chat template（含 `tools`），產出 train / valid / test JSONL。
+1. **情境矩陣**（`data/scenarios.py`）：資料類型 × 工具組合 × 說話風格 × 日期說法；每筆的「今天」隨機落在 2026 年，無工具類另有「閒聊／常識／不支援」三種。
+2. **產生問題**：GPT 依情境批次寫出使用者的第一則訊息（每批 10 則，JSON 陣列）。**產生器永遠看不到手寫測試集。**
+3. **老師示範軌跡**：把 GPT 當作 `LLMClient`，接上 `run_agent` ＋ `MockTools` ＋ 與 Qwen 相同的系統提示，完整跑一次。工具結果一律來自 mock，循序多步自然看得到前一步的結果。老師沒有重試機會（`parse_retries=0`、`schema_retries=0`），出錯的軌跡直接丟棄——訓練資料不示範「從錯誤中恢復」。
+4. **驗證**（`data/validate.py`），任一項失敗即丟棄並計數：
+   - 正常結束，且過程中沒有解析錯誤、參數錯誤、LLM 錯誤或退回
+   - 呼叫的工具與次數符合情境的資料類型（平行＝同一輪、循序＝至少兩輪且順序正確、追問＝不呼叫且回覆是問句）
+   - 相對日期與 `dates.py` 重算結果一致
+   - OpenCC `s2twp` 往返檢查（「台／臺」視為相同）：不一致即視為含簡體字或中國用語
+   - 使用者訊息不可出現工具英文名稱
+5. **防污染**：和手寫測試集近似重複（MinHash ≥ 0.8）的樣本剔除。
+6. **去重**：MinHash 近似重複去除。
+7. **分組切分**（見 5.3）。
+8. **格式化**：`render.py` 自行渲染 Qwen chat 文字並標記只訓練 assistant 段落；以 `tests/fixtures/` 的官方模板輸出驗證逐字相同。合成測試集輸出成 `cases.py` 格式。
 
-- 產生器模型：預設 `claude-sonnet-5`；先以 50 筆實測成本，若推估總成本超過 15 美元則改用 `claude-haiku-4-5-20251001`。
-- 所有丟棄原因與數量寫進 `reports/data_report.json`。
+- 產生器與老師模型：預設 `gpt-6-sol`（`reasoning_effort: none`）；先試算 50 筆，推估總成本超過 15 美元則改用 `gpt-6-luna`；兩者都超過時把 `train_target` 降到預算允許的量（最低 2,000 筆），仍不夠就停下來和使用者討論。
+- 花費記錄在 `<輸出檔>.cost.json`，可跨多次續跑累計；統計與丟棄原因寫進 `data/synthetic/data_report.json`，摘要寫進 `docs/data-report.md`。
 
 ### 5.3 切分與洩漏護欄
 
-- 分組鍵：`(資料類型, 工具組合, 模板編號)`。同一組只會出現在同一個 split。
-- 比例：train 80% / valid 10% / synthetic-test 10%（以組為單位）。
+- 分組鍵：`(資料類型, 工具組合或無工具類型, 說話風格)`，共 198 組。同一組只會出現在同一個 split。
+- 比例：train 80% / valid 10% / synthetic-test 10%，**每個資料類型各自**以組為單位分配，確保每個 split 都有六種資料類型。
 - `SplitResult.__post_init__` 執行 `assert_no_leakage`：
   - 各 split 分組鍵兩兩不相交
-  - 跨 split 的 MinHash 相似度不得超過門檻（預設 0.8）
+  - 跨 split 的使用者訊息 MinHash 相似度不得達到門檻（預設 0.8）
 - 無法建構出有洩漏的 `SplitResult` 物件。
 
 ### 5.4 兩份測試集
@@ -215,7 +218,7 @@ lora-toolcall-tw/
 | 任務 | 端到端成功率 | 以 mock 工具跑完整個 Agent 迴圈，檢查最終狀態（如 SQLite 行事曆內容） |
 | 回覆 | 簡體字比例 | OpenCC 自動判斷 |
 | 回覆 | 忠實度 / 台灣用語 | LLM 評分，僅供參考 |
-| 系統 | 首字延遲、tokens/s、每千次請求成本 | 本機 1050 Ti vs Claude API |
+| 系統 | 首字延遲、tokens/s、每千次請求成本 | 本機 1050 Ti vs OpenAI API |
 
 **主要結論一律以確定性指標為準**（格式、決策、呼叫、任務）。
 
@@ -225,7 +228,7 @@ lora-toolcall-tw/
 |---|---|
 | B0 | 原始 Qwen，零樣本 |
 | B1 | 原始 Qwen ＋ few-shot 提示（每類 1 例） |
-| B2 | Claude API |
+| B2 | OpenAI API（gpt-6-sol，同一份系統提示） |
 | FT | 微調後 Qwen |
 | FT+G | 微調後 Qwen ＋ GBNF 語法約束 |
 
@@ -284,9 +287,9 @@ lora-toolcall-tw/
 | 環境變數 | 值 | 說明 |
 |---|---|---|
 | `TOOLS_MODE` | `mock` / `live` | 工具實作 |
-| `FALLBACK` | `off` / `claude` | 失敗時是否退回 Claude |
+| `FALLBACK` | `off` / `gpt` | 失敗時是否退回 GPT |
 | `LLM_BASE_URL` | URL | llama-server 位址 |
-| `ANTHROPIC_API_KEY`、`CWA_API_KEY`、`TDX_CLIENT_ID`、`TDX_CLIENT_SECRET` | — | 由使用者自行申請，放在 `.env`，不進版控 |
+| `OPENAI_API_KEY`、`CWA_API_KEY`、`TDX_CLIENT_ID`、`TDX_CLIENT_SECRET` | — | 由使用者自行申請，放在 `.env`，不進版控 |
 
 ---
 
@@ -294,7 +297,7 @@ lora-toolcall-tw/
 
 | 狀況 | 行為 |
 |---|---|
-| 輸出無法解析 | 附上錯誤訊息請模型重試 1 次 → 仍失敗且 `FALLBACK=claude` 則改用 Claude → 否則回覆友善錯誤訊息 |
+| 輸出無法解析 | 附上錯誤訊息請模型重試 1 次 → 仍失敗且 `FALLBACK=gpt` 則改用 GPT → 否則回覆友善錯誤訊息 |
 | 參數不符 schema | 把驗證錯誤當作工具結果回給模型自我修正，最多 2 次 |
 | 迴圈過長 | 每請求最多 5 步 |
 | live API 逾時 / 失敗 | 如實告知使用者；**不得靜默改用 mock 資料** |
