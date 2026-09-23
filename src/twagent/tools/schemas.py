@@ -28,15 +28,15 @@ THSR_STATIONS = [
 
 TRA_TRAIN_TYPES = ["自強", "莒光", "區間快", "區間"]
 
-DATE = {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$", "description": "YYYY-MM-DD"}
+DATE = {"type": "string", "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "YYYY-MM-DD"}
 TIME = {
     "type": "string",
-    "pattern": r"^([01]\d|2[0-3]):[0-5]\d$",
+    "pattern": r"^([01][0-9]|2[0-3]):[0-5][0-9]$",
     "description": "HH:MM（24 小時制）",
 }
 DATETIME = {
     "type": "string",
-    "pattern": r"^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$",
+    "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]$",
     "description": "YYYY-MM-DDTHH:MM（臺灣時間）",
 }
 
@@ -100,10 +100,16 @@ TOOLS: list[dict[str, Any]] = [
         "check_invoice",
         "統一發票對獎。",
         {
-            "number": {"type": "string", "pattern": r"^\d{8}$", "description": "8 碼發票號碼"},
+            "number": {
+                "type": "string",
+                "pattern": r"^[0-9]{8}$",
+                "maxLength": 8,
+                "description": "8 碼發票號碼",
+            },
             "period": {
                 "type": "string",
-                "pattern": r"^\d{3}-(01-02|03-04|05-06|07-08|09-10|11-12)$",
+                "pattern": r"^[0-9]{3}-(01-02|03-04|05-06|07-08|09-10|11-12)$",
+                "maxLength": 9,
                 "description": "民國年-起月-迄月，例如 115-07-08",
             },
         },

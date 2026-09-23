@@ -104,6 +104,10 @@ def test_valid_calls(name, args):
             {"title": "x", "start": "2026-09-24T15:00", "end": "2026-09-24T14:00"},
             "end: must be later than start",
         ),
+        ("get_weather", {"city": "臺中市", "date": "２０２６-０９-２４"}, "date"),
+        ("check_invoice", {"number": "１２３４５６７８", "period": "115-07-08"}, "number"),
+        ("get_weather", {"city": "臺中市", "date": "2026-09-24\n"}, "date"),
+        ("check_invoice", {"number": "12345678\n", "period": "115-07-08"}, "number"),
     ],
 )
 def test_invalid_calls(name, args, fragment):
