@@ -128,3 +128,18 @@ def test_wording_accepts_taiwanese(text):
 def test_reason_key():
     assert reason_key("date: 明天 should be x, got y") == "date"
     assert reason_key("empty final reply") == "empty final reply"
+
+
+def test_unexpected_tool_error_is_rejected():
+    same = call("search_thsr", origin="臺北", destination="臺北", date="2026-03-05")
+    rec = record("single", ["search_thsr"], [same, "抱歉，起訖站相同。"])
+    problems = validate_record(rec)
+    assert problems == ["unexpected tool_error: 起訖站相同"]
+    assert reason_key(problems[0]) == "unexpected tool_error"
+
+
+def test_missing_date_phrase_is_rejected():
+    rec = record("single", ["get_weather"], [W, "明天臺中多雲。"], message="台中會下雨嗎")
+    problems = validate_record(rec)
+    assert problems == ["date phrase missing: 明天"]
+    assert reason_key(problems[0]) == "date phrase missing"

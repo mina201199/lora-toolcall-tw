@@ -6,8 +6,10 @@ them. Checks, in the spirit of astro-vlm-lora's "one number that does not fit":
 
 - the run ended normally and the teacher never erred (no parse/schema/llm
   error, no fallback) -- we do not train on recoveries;
-- the calls match the scenario's category and tools;
-- a relative date resolves to exactly what `dates.py` computes;
+- the calls match the scenario's category and tools, and a tool only fails
+  in a tool_error scenario (a mock rejecting the call means bad arguments);
+- the user message uses the scenario's date phrase verbatim, and that
+  relative date resolves to exactly what `dates.py` computes;
 - no simplified characters or mainland wording (OpenCC s2twp round trip);
 - the generated user message does not leak tool names.
 """
@@ -91,6 +93,16 @@ def _date_problem(s: Scenario, result: dict[str, Any]) -> str | None:
     return None
 
 
+def _unexpected_tool_error(s: Scenario, result: dict[str, Any]) -> str | None:
+    if s.category == "tool_error":
+        return None
+    for event in result["trace"]:
+        if event["type"] == "tool_error":
+            what = event.get("error") or event.get("call", {}).get("name", "")
+            return f"unexpected tool_error: {what}"
+    return None
+
+
 def validate_record(record: dict[str, Any]) -> list[str]:
     s = Scenario.from_dict(record["scenario"])
     result = record["result"]
@@ -103,9 +115,13 @@ def validate_record(record: dict[str, Any]) -> list[str]:
     if not result["final_text"].strip():
         problems.append("empty final reply")
     problems += _category_problems(s, result)
-    if (p := _date_problem(s, result)) is not None:
+    if (p := _unexpected_tool_error(s, result)) is not None:
         problems.append(p)
     message = record["message"]
+    if s.date_expr and s.date_expr not in message:
+        problems.append(f"date phrase missing: {s.date_expr}")
+    if (p := _date_problem(s, result)) is not None:
+        problems.append(p)
     if any(name in message for name in tool_names()):
         problems.append("tool name leaked into user message")
     texts = [message] + [m["content"] for m in record["messages"] if m["role"] == "assistant"]
