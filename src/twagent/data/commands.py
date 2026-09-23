@@ -17,6 +17,7 @@ import argparse
 import json
 import math
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -166,8 +167,14 @@ def cmd_build_dataset(args: argparse.Namespace) -> int:
         return 1
     handwritten: list[str] = []
     if Path(args.handwritten).exists():
-        cases, _ = load_cases(args.handwritten)
+        cases, errors = load_cases(args.handwritten)
         handwritten = [c.messages[-1]["content"] for c in cases]
+        if errors:
+            # Count cases, not messages (one case can have several problems), and
+            # never echo the errors: they quote the user's hand-written cases.
+            invalid = len({re.match(r"line \d+", e)[0] for e in errors})
+            print(f"WARNING handwritten set has {invalid} invalid case(s); "
+                  "contamination check uses the valid ones only")  # fmt: skip
     split, report = build_dataset(raw, handwritten_messages=handwritten, seed=cfg.synth.seed)
     out_dir = Path(args.out_dir)
     write_dataset(split, out_dir)

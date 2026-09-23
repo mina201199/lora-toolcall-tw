@@ -209,3 +209,19 @@ def test_projection_verdict_uses_the_effective_budget(fake_gpt, tmp_path, capsys
     cli.main([*argv, "--budget", "0.0000001"])  # the pilot is already complete: no new spend
     [projection] = [line for line in capsys.readouterr().out.splitlines() if "projection" in line]
     assert projection.endswith("(EXCEEDS budget $0.00)")
+
+
+def test_build_dataset_warns_about_invalid_handwritten_cases(fake_gpt, tmp_path, capsys):
+    raw = tmp_path / "raw.jsonl"
+    cli.main(["synth", "--total", "300", "--out", str(raw), "--config", CONFIG])
+    handwritten = tmp_path / "handwritten.jsonl"
+    handwritten.write_text('{"id": "hw-secret-content", broken\n', encoding="utf-8")
+    capsys.readouterr()
+    argv = ["build-dataset", "--raw", str(raw), "--out-dir", str(tmp_path / "ds")]
+    assert cli.main([*argv, "--handwritten", str(handwritten), "--config", CONFIG]) == 0
+    printed = capsys.readouterr().out
+    assert (
+        "WARNING handwritten set has 1 invalid case(s); "
+        "contamination check uses the valid ones only"
+    ) in printed
+    assert "hw-secret-content" not in printed
