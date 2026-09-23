@@ -13,8 +13,10 @@ contains combinations the model never trained on.
 from __future__ import annotations
 
 import random
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
+from itertools import islice
 from typing import Any
 
 CATEGORY_SHARE = {
@@ -101,41 +103,66 @@ class Scenario:
         return cls(**{**d, "tools": tuple(d["tools"]), "today": date.fromisoformat(d["today"])})
 
 
-def _counts(total: int) -> dict[str, int]:
-    counts = {c: int(total * share) for c, share in CATEGORY_SHARE.items()}
-    counts["single"] += total - sum(counts.values())  # rounding remainder
-    return counts
+# Integer weights per block of 20 scenarios: 7/3/3/3/3/1.
+_BLOCK = 20
+_WEIGHTS = {c: round(share * _BLOCK) for c, share in CATEGORY_SHARE.items()}
+assert sum(_WEIGHTS.values()) == _BLOCK, _WEIGHTS
+
+
+def _category_stream() -> Iterator[str]:
+    """Smooth weighted round-robin over `_WEIGHTS`, forever.
+
+    Categories are interleaved (7/3/3/3/3/1 spread out, not in runs), and every
+    block of `_BLOCK` consecutive items has exactly the weighted counts.
+    """
+    current = dict.fromkeys(_WEIGHTS, 0)
+    while True:
+        for c, w in _WEIGHTS.items():
+            current[c] += w
+        pick = max(current, key=current.__getitem__)  # ties: CATEGORY_SHARE order
+        current[pick] -= _BLOCK
+        yield pick
+
+
+def _cells(category: str) -> list[tuple[tuple[str, ...], str, str]]:
+    if category == "no_tool":
+        return [((), kind, style) for kind in NO_TOOL_KINDS for style in STYLES]
+    return [(combo, "", style) for combo in COMBOS[category] for style in STYLES]
 
 
 def build_scenarios(total: int, seed: int) -> list[Scenario]:
-    """`total` scenarios in CATEGORY_SHARE proportions, deterministic in `seed`.
+    """The first `total` items of one deterministic scenario stream for `seed`.
 
-    Within a category, cells (combo x style, or kind x style) are visited
-    round-robin in a shuffled order, so every cell gets used before any cell
-    is used twice.
+    The stream does not depend on `total`, so a shorter run is an exact prefix
+    of a longer one (same ids, same content) and an interrupted run's prefix
+    still covers every category. Categories are interleaved by weighted
+    round-robin, so any 20 consecutive scenarios have exact CATEGORY_SHARE
+    proportions. Within a category, cells (combo x style, or kind x style) are
+    visited round-robin in a shuffled order, so every cell gets used before
+    any cell is used twice.
     """
     rng = random.Random(seed)
     year_start = date(2026, 1, 1)
+    cells = {category: _cells(category) for category in CATEGORY_SHARE}
+    for category in CATEGORY_SHARE:  # fixed order, so the shuffles are deterministic
+        rng.shuffle(cells[category])
+    used = dict.fromkeys(CATEGORY_SHARE, 0)
     out: list[Scenario] = []
-    for category, n in _counts(total).items():
-        if category == "no_tool":
-            cells = [((), kind, style) for kind in NO_TOOL_KINDS for style in STYLES]
-        else:
-            cells = [(combo, "", style) for combo in COMBOS[category] for style in STYLES]
-        rng.shuffle(cells)
-        for i in range(n):
-            tools, kind, style = cells[i % len(cells)]
-            dated = any(t in DATED_TOOLS for t in tools)
-            out.append(
-                Scenario(
-                    id=f"s{len(out):05d}",
-                    category=category,
-                    tools=tools,
-                    style=style,
-                    today=year_start + timedelta(days=rng.randrange(365)),
-                    date_expr=rng.choice(DATE_EXPRS) if dated else None,
-                    kind=kind,
-                    failure=rng.choice(FAILURES) if category == "tool_error" else "",
-                )
+    for category in islice(_category_stream(), total):
+        own = cells[category]
+        tools, kind, style = own[used[category] % len(own)]
+        used[category] += 1
+        dated = any(t in DATED_TOOLS for t in tools)
+        out.append(
+            Scenario(
+                id=f"s{len(out):05d}",
+                category=category,
+                tools=tools,
+                style=style,
+                today=year_start + timedelta(days=rng.randrange(365)),
+                date_expr=rng.choice(DATE_EXPRS) if dated else None,
+                kind=kind,
+                failure=rng.choice(FAILURES) if category == "tool_error" else "",
             )
+        )
     return out

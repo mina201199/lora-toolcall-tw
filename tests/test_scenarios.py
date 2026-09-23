@@ -26,10 +26,29 @@ def test_proportions():
     }
 
 
-def test_rounding_remainder_goes_to_single():
+def test_any_total_is_honoured():
     scenarios = build_scenarios(7, seed=1)
     assert len(scenarios) == 7
     assert sum(CATEGORY_SHARE.values()) == pytest.approx(1.0)
+
+
+def test_prefix_stable_across_totals():
+    # An interrupted or budget-stopped run keeps a prefix; a different --total
+    # must not reassign ids or reshuffle what that prefix contains.
+    short, long = build_scenarios(500, seed=1), build_scenarios(1300, seed=1)
+    assert long[:500] == short
+
+
+def test_every_block_of_20_has_exact_proportions():
+    scenarios = build_scenarios(200, seed=1)
+    assert set(Counter(s.category for s in scenarios[:20])) == set(CATEGORY_SHARE)
+    for i in range(0, 200, 20):
+        counts = Counter(s.category for s in scenarios[i : i + 20])
+        assert counts == {c: round(share * 20) for c, share in CATEGORY_SHARE.items()}
+
+
+def test_ids_follow_stream_order():
+    assert [s.id for s in build_scenarios(30, seed=1)] == [f"s{i:05d}" for i in range(30)]
 
 
 def test_deterministic_and_seed_sensitive():
