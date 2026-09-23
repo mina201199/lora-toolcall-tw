@@ -21,6 +21,7 @@ class FakeGPT:
 
     def __init__(self, model, **kwargs):
         self.model = model
+        self.kwargs = kwargs
         self.usage = Usage()
         FakeGPT.instances.append(self)
 
@@ -65,6 +66,7 @@ def test_pilot_writes_records_ledger_and_projection(fake_gpt, tmp_path, capsys):
     assert "keep rate" in printed and "projection for train_target=3000" in printed
     assert "llm errors 0" in printed.splitlines()[0]
     assert {c.model for c in fake_gpt.instances} == {"gpt-6-sol"}
+    assert [c.kwargs["prompt_cache_key"] for c in fake_gpt.instances] == ["twagent-synth"] * 2
 
 
 def test_repaired_partial_line_is_reported(fake_gpt, tmp_path, capsys):

@@ -31,6 +31,7 @@ from .synth import load_records, synthesize
 from .validate import validate_record
 
 TRAIN_SHARE = 0.8  # split_by_group puts ~10% in valid and ~10% in test
+PROMPT_CACHE_KEY = "twagent-synth"  # stable across runs, so resumed runs hit the same cache
 
 
 def load_dotenv(path: Path) -> None:
@@ -104,8 +105,9 @@ def cmd_synth(args: argparse.Namespace) -> int:
         out = Path(args.out or "data/synthetic/raw.jsonl")
     budget = args.budget if args.budget is not None else cfg.budget_usd
 
-    teacher = GPTClient(model, max_tokens=cfg.max_tokens, reasoning_effort=cfg.reasoning_effort)
-    query = GPTClient(model, max_tokens=cfg.max_tokens * 4, reasoning_effort=cfg.reasoning_effort)
+    common = {"reasoning_effort": cfg.reasoning_effort, "prompt_cache_key": PROMPT_CACHE_KEY}
+    teacher = GPTClient(model, max_tokens=cfg.max_tokens, **common)
+    query = GPTClient(model, max_tokens=cfg.max_tokens * 4, **common)
     ledger_path = out.with_name(out.name + ".cost.json")
     ledger = _read_ledger(ledger_path)
     previous = ledger["spent_usd"]

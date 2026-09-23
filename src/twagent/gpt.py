@@ -11,7 +11,8 @@ For prompt caching the system prompt is split into two system messages: the
 tool block (large, identical for every request) goes first and ends with an
 explicit `prompt_cache_breakpoint`; the persona (small, contains today's date)
 follows it. OpenAI's default implicit breakpoint stays on, so later turns of
-one trajectory reuse the earlier turns as well.
+one trajectory reuse the earlier turns as well. A fixed `prompt_cache_key`
+routes requests that share that prefix to the same cache.
 """
 
 from __future__ import annotations
@@ -107,11 +108,13 @@ class GPTClient:
         *,
         max_tokens: int = 1024,
         reasoning_effort: str = "none",
+        prompt_cache_key: str | None = None,
         client: Any = None,
     ) -> None:
         self.model = model
         self.max_tokens = max_tokens
         self.reasoning_effort = reasoning_effort
+        self.prompt_cache_key = prompt_cache_key
         self.usage = Usage()
         # Reads OPENAI_API_KEY from the environment; the key never passes through here.
         self._client = client if client is not None else openai.OpenAI(max_retries=3, timeout=120)
@@ -124,6 +127,8 @@ class GPTClient:
         }
         if self.reasoning_effort:
             kwargs["reasoning_effort"] = self.reasoning_effort
+        if self.prompt_cache_key is not None:
+            kwargs["prompt_cache_key"] = self.prompt_cache_key
         try:
             response = self._client.chat.completions.create(**kwargs)
         except openai.OpenAIError as e:

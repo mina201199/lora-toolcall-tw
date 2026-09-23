@@ -100,8 +100,15 @@ def test_complete_sends_reasoning_effort_and_accumulates_usage():
     assert sent["reasoning_effort"] == "none"
     assert sent["max_completion_tokens"] == 1024
     assert "tools" not in sent and "temperature" not in sent and "max_tokens" not in sent
+    assert "prompt_cache_key" not in sent  # only sent when configured
     u = client.usage
     assert (u.requests, u.input_tokens, u.cached_tokens, u.cache_write_tokens) == (1, 50, 1200, 250)
+
+
+def test_prompt_cache_key_is_sent_when_set():
+    client, fake = client_with(response(), prompt_cache_key="twagent-synth")
+    client.complete([{"role": "user", "content": "嗨"}])
+    assert fake.calls[0]["prompt_cache_key"] == "twagent-synth"
 
 
 def test_reasoning_effort_omitted_when_empty():
