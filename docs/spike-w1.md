@@ -36,7 +36,7 @@
 [same] after_tool_call
 ```
 
-兩個情境都是 `[same]`，沒有出現 `[DIFF]`：`prompting.render_tools_block` 與 `parsing.render_tool_calls` 目前手刻的渲染方式，字元對字元等同於 Qwen3 官方 chat template（`tokenizer_config.json` 內建的 Jinja 模板）在有 `tools` 時的輸出。因此不需要修改 `src/twagent/prompting.py` 或 `src/twagent/parsing.py`，`tests/test_prompting.py`、`tests/test_parsing.py` 的既有斷言也不用變動。
+兩個情境都是 `[same]`，沒有出現 `[DIFF]`：`prompting.render_tools_block` 與 `parsing.render_tool_calls` 目前手刻的渲染方式，字元對字元等同於 GGUF 檔案內嵌的 chat template（由 llama.cpp 的 `/apply-template` 渲染，Qwen3-4B-Instruct-2507；尚未針對 Qwen3-1.7B 驗證）在有 `tools` 時的輸出。因此不需要修改 `src/twagent/prompting.py` 或 `src/twagent/parsing.py`，`tests/test_prompting.py`、`tests/test_parsing.py` 的既有斷言也不用變動。
 
 用 `.venv/Scripts/python scripts/check_template.py --save tests/fixtures` 把官方渲染結果存成 `tests/fixtures/qwen_first_turn.txt`、`tests/fixtures/qwen_after_tool_call.txt`（exit code 0），並用 `tests/test_template_fixture.py` 鎖住這個結果（3 個測試全過）。順便確認了工具結果（`tool` 訊息）在模板裡的實際包法：`<tool_call>` 後面的下一輪不是另一個 `tool` role 區塊，而是被包成 `<|im_start|>user\n<tool_response>\n{...}\n</tool_response><|im_end|>`——也就是說 Qwen3 的模板把工具回傳結果併入下一個 `user` 回合，而不是產生獨立的 `tool` 回合標記。Plan 2 的訓練資料格式化（下一個 plan）需要照這個實際格式組訓練樣本，而不是照 OpenAI 風格「每個 tool 訊息各自一個 role」的直覺想法。
 
