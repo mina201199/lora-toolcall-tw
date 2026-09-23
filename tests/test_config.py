@@ -18,7 +18,7 @@ def test_default_config_loads():
 
 def test_to_dict_round_trips_every_section():
     cfg = load_config(ROOT / "configs" / "default.yaml")
-    assert set(cfg.to_dict()) == {"agent", "llm", "tools"}
+    assert set(cfg.to_dict()) == {"agent", "llm", "tools", "synth"}
 
 
 def test_unknown_key_is_rejected(tmp_path):

@@ -19,3 +19,21 @@ llm:
 
 tools:
   mode: mock            # mock | live (live arrives with the deployment plan)
+
+synth:
+  # Teacher model for synthetic data (spec §5.2). Run a 50-sample pilot first;
+  # if the projected cost exceeds budget_usd, switch to fallback_model.
+  model: gpt-6-sol
+  fallback_model: gpt-6-luna
+  budget_usd: 15.0
+  train_target: 3000      # training examples wanted after filtering and splitting
+  query_batch_size: 10    # user messages generated per request
+  max_tokens: 1024
+  # The teacher must write <tool_call> text, not reason; reasoning tokens are billed output.
+  reasoning_effort: none
+  seed: 3407
+  # USD per 1M tokens, OpenAI Standard tier (developers.openai.com/api/docs/pricing, 2026-09-23).
+  # cache_read = 0.1x input; cache_write = 1.25x input (GPT-5.6 and later, 30-minute TTL).
+  prices:
+    gpt-6-sol: {input: 2.0, output: 10.0, cache_read: 0.2, cache_write: 2.5}
+    gpt-6-luna: {input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0.125}
