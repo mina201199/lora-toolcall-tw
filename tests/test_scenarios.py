@@ -1,0 +1,95 @@
+from collections import Counter
+
+import pytest
+
+from twagent.data.scenarios import (
+    CATEGORY_SHARE,
+    COMBOS,
+    DATE_EXPRS,
+    STYLES,
+    Scenario,
+    build_scenarios,
+)
+from twagent.dates import resolve_date_expr
+from twagent.tools.schemas import tool_names
+
+
+def test_proportions():
+    counts = Counter(s.category for s in build_scenarios(1000, seed=1))
+    assert counts == {
+        "single": 350,
+        "parallel": 150,
+        "sequential": 150,
+        "clarify": 150,
+        "no_tool": 150,
+        "tool_error": 50,
+    }
+
+
+def test_rounding_remainder_goes_to_single():
+    scenarios = build_scenarios(7, seed=1)
+    assert len(scenarios) == 7
+    assert sum(CATEGORY_SHARE.values()) == pytest.approx(1.0)
+
+
+def test_deterministic_and_seed_sensitive():
+    a, b = build_scenarios(200, seed=3), build_scenarios(200, seed=3)
+    assert a == b
+    assert a != build_scenarios(200, seed=4)
+
+
+def test_ids_unique():
+    ids = [s.id for s in build_scenarios(500, seed=1)]
+    assert len(set(ids)) == len(ids)
+
+
+def test_every_cell_used_before_any_repeats():
+    scenarios = [s for s in build_scenarios(1000, seed=1) if s.category == "single"]
+    cells = Counter((s.tools, s.style) for s in scenarios)
+    assert len(cells) == len(COMBOS["single"]) * len(STYLES)
+    assert max(cells.values()) - min(cells.values()) <= 1
+
+
+def test_combos_only_use_real_tools():
+    names = set(tool_names())
+    for combos in COMBOS.values():
+        for combo in combos:
+            assert set(combo) <= names
+
+
+def test_date_expr_only_for_dated_tools_and_resolvable():
+    for s in build_scenarios(500, seed=2):
+        if s.date_expr is None:
+            assert not (
+                {"get_weather", "search_thsr", "search_tra", "calendar_add", "calendar_list"}
+                & set(s.tools)
+            )
+        else:
+            assert s.date_expr in DATE_EXPRS
+            resolve_date_expr(s.date_expr, s.today)  # must not raise
+
+
+def test_category_specific_fields():
+    for s in build_scenarios(500, seed=2):
+        assert bool(s.kind) == (s.category == "no_tool")
+        assert bool(s.failure) == (s.category == "tool_error")
+        assert (s.tools == ()) == (s.category == "no_tool")
+
+
+def test_today_within_2026():
+    for s in build_scenarios(300, seed=5):
+        assert s.today.year == 2026
+
+
+def test_group_and_round_trip():
+    s = build_scenarios(50, seed=1)[0]
+    assert s.group.startswith(f"{s.category}|")
+    assert Scenario.from_dict(s.to_dict()) == s
+
+
+def test_group_ignores_today_and_date():
+    a = Scenario(
+        "a", "single", ("get_weather",), "口語隨興", build_scenarios(1, 1)[0].today, "明天"
+    )
+    b = Scenario("b", "single", ("get_weather",), "口語隨興", a.today.replace(month=1), "後天")
+    assert a.group == b.group == "single|get_weather|口語隨興"
