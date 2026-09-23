@@ -1,0 +1,12 @@
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+# Model weights and generated artefacts never go into git.
+models/
+outputs/
+data/synthetic/
+logs/
+.env
