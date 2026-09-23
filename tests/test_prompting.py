@@ -1,7 +1,7 @@
 import json
 from datetime import date
 
-from twagent.prompting import build_system_prompt, render_tools_block
+from twagent.prompting import build_persona, build_system_prompt, render_tools_block
 from twagent.tools.schemas import TOOLS
 
 
@@ -32,3 +32,11 @@ def test_persona_and_tools_are_separated_by_a_blank_line():
     persona, _, rest = prompt.partition("\n\n# Tools")
     assert persona.startswith("你是臺灣生活助理")
     assert rest
+
+
+def test_persona_states_invoice_periods():
+    persona = build_persona(date(2026, 9, 23))
+    assert "「這一期」是 115-09-10，「上一期」是 115-07-08" in persona
+
+    persona_jan = build_persona(date(2026, 1, 5))
+    assert "「上一期」是 114-11-12" in persona_jan

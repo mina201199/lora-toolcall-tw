@@ -20,14 +20,17 @@ import json
 from datetime import date
 from typing import Any
 
-from twagent.dates import format_today
+from twagent.dates import format_today, invoice_period, previous_invoice_period
 from twagent.tools.schemas import TOOLS
 
 PERSONA = (
     "你是臺灣生活助理，可以查天氣、高鐵與臺鐵班次、YouBike 站點、統一發票對獎，並管理使用者的行事曆。\n"
     "- 一律使用繁體中文與臺灣用語回覆。\n"
     "- 今天是 {today}，時區為 Asia/Taipei。所有相對日期都以今天為準換算。\n"
-    "- 呼叫工具所需的資訊不足時，先向使用者追問，不要自行猜測。\n"
+    "- 統一發票「這一期」是 {invoice}，「上一期」是 {previous_invoice}。\n"
+    "- 必填資訊不足時，先向使用者追問，不要自行猜測；選填參數（例如出發時間、車種、地點）"
+    "使用者沒提到就省略，直接查詢。\n"
+    "- 需要查詢或新增時，直接輸出工具呼叫，不要只說「我來查」。\n"
     "- 超出工具能力範圍的請求（例如訂票、付款），直接說明做不到。"
 )
 
@@ -50,7 +53,11 @@ def render_tools_block(tools: list[dict[str, Any]]) -> str:
 
 
 def build_persona(today: date) -> str:
-    return PERSONA.format(today=format_today(today))
+    return PERSONA.format(
+        today=format_today(today),
+        invoice=invoice_period(today),
+        previous_invoice=previous_invoice_period(today),
+    )
 
 
 def build_system_prompt(today: date, tools: list[dict[str, Any]] | None = None) -> str:
