@@ -124,3 +124,15 @@ def test_date_expr_never_points_to_the_past():
     assert len(dated) > 200
     for s in dated:
         assert resolve_date_expr(s.date_expr, s.today) >= s.today, s
+
+
+def test_ambiguous_weekday_phrases_never_land_on_today():
+    # e.g. 這週五 on a Friday or 週六 on a Saturday reads as ambiguous ("which
+    # Saturday?", per the pilot's teacher) -- only the explicit 今天 may land
+    # on today.
+    dated = [s for s in build_scenarios(600, seed=2) if s.date_expr is not None]
+    assert len(dated) > 200
+    for s in dated:
+        if s.date_expr == "今天":
+            continue
+        assert resolve_date_expr(s.date_expr, s.today) > s.today, s

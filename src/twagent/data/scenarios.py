@@ -133,8 +133,13 @@ def _cells(category: str) -> list[tuple[tuple[str, ...], str, str]]:
 
 
 def _future_date_exprs(today: date) -> list[str]:
-    """DATE_EXPRS that resolve to `today` or later (e.g. not 這週五 on a Saturday)."""
-    return [e for e in DATE_EXPRS if resolve_date_expr(e, today) >= today]
+    """DATE_EXPRS that resolve strictly after `today`, plus 今天 itself.
+
+    A weekday phrase that happens to land on today reads as ambiguous (e.g.
+    這週五 on a Friday, or 週六 on a Saturday -- "which Saturday?"), so it is
+    excluded; only the explicit 今天 may resolve to today.
+    """
+    return [e for e in DATE_EXPRS if e == "今天" or resolve_date_expr(e, today) > today]
 
 
 def build_scenarios(total: int, seed: int) -> list[Scenario]:
