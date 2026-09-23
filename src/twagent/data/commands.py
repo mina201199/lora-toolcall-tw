@@ -102,7 +102,8 @@ def cmd_synth(args: argparse.Namespace) -> int:
     keep_rate = kept / len(records) if records else 0.0
     per_record = ledger["spent_usd"] / len(records) if records else 0.0
     print(f"model {model} | wrote {report.written} | already had {report.already_done} | "
-          f"missing queries {report.missing_queries} | stopped: {report.stopped}")  # fmt: skip
+          f"missing queries {report.missing_queries} | llm errors {report.llm_errors} | "
+          f"stopped: {report.stopped}")  # fmt: skip
     print(f"records {len(records)} | keep rate {keep_rate:.1%} | spent ${ledger['spent_usd']:.2f} "
           f"| ${per_record:.4f} per record")  # fmt: skip
     if keep_rate > 0:

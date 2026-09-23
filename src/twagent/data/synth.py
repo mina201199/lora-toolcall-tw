@@ -9,6 +9,10 @@
 The teacher gets no second chances (`parse_retries=0`, `schema_retries=0`):
 a trajectory with any error is recorded and later dropped by validation, so
 the training data never shows a model recovering from its own bad output.
+The exception is an API failure (`stopped_reason == "llm_error"`): it says
+nothing about the scenario, so it is not recorded and a rerun retries it.
+`MAX_CONSECUTIVE_LLM_ERRORS` failures in a row stop the run, so a persistent
+error (a bad request, an outage) does not burn through the whole matrix.
 
 Output is append-only JSONL, one record per scenario, so an interrupted run
 resumes where it stopped.
@@ -33,6 +37,7 @@ from twagent.tools.schemas import get_tool
 from .scenarios import Scenario
 
 TEACHER_CONFIG = AgentConfig(max_steps=5, parse_retries=0, schema_retries=0)
+MAX_CONSECUTIVE_LLM_ERRORS = 3
 
 _CATEGORY_BRIEF = {
     "single": "只需要呼叫一次下列工具就能完成，而且該工具所需的資訊都已經說清楚。",
@@ -118,7 +123,8 @@ class SynthReport:
     written: int = 0
     already_done: int = 0
     missing_queries: int = 0
-    stopped: str = "complete"  # complete | budget
+    llm_errors: int = 0  # teacher trajectories lost to an API error (not written)
+    stopped: str = "complete"  # complete | budget | llm_error
 
 
 def load_records(path: Path) -> list[dict[str, Any]]:
@@ -143,11 +149,16 @@ def synthesize(
     spent_usd: Callable[[], float],
     budget_usd: float,
 ) -> SynthReport:
-    """Append one record per scenario to `out_path`; stop before exceeding budget."""
+    """Append one record per scenario to `out_path`.
+
+    Stops before a batch would start at or past the budget, or after
+    `MAX_CONSECUTIVE_LLM_ERRORS` LLM failures in a row.
+    """
     done = {r["scenario"]["id"] for r in load_records(out_path)}
     report = SynthReport(already_done=len(done))
     todo = [s for s in scenarios if s.id not in done]
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    failures = 0  # consecutive LLM failures: query calls or teacher trajectories
     with open(out_path, "a", encoding="utf-8") as f:
         for batch in _chunks(todo, batch_size):
             if spent_usd() >= budget_usd:
@@ -157,14 +168,26 @@ def synthesize(
                 raw = query_llm.complete([{"role": "user", "content": build_query_prompt(batch)}])
             except LLMError:
                 report.missing_queries += len(batch)
-                continue
-            messages = parse_query_response(raw, batch)
-            for s in batch:
-                if s.id not in messages:
-                    report.missing_queries += 1
-                    continue
-                record = run_trajectory(s, messages[s.id], teacher)
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                f.flush()
-                report.written += 1
+                failures += 1
+            else:
+                failures = 0
+                messages = parse_query_response(raw, batch)
+                for s in batch:
+                    if s.id not in messages:
+                        report.missing_queries += 1
+                        continue
+                    record = run_trajectory(s, messages[s.id], teacher)
+                    if record["result"]["stopped_reason"] == "llm_error":
+                        report.llm_errors += 1  # not written: a rerun retries it
+                        failures += 1
+                        if failures >= MAX_CONSECUTIVE_LLM_ERRORS:
+                            break
+                        continue
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    f.flush()
+                    report.written += 1
+                    failures = 0
+            if failures >= MAX_CONSECUTIVE_LLM_ERRORS:
+                report.stopped = "llm_error"
+                break
     return report

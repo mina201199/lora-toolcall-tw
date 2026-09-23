@@ -3,6 +3,7 @@ from datetime import date
 
 from twagent.data.scenarios import Scenario
 from twagent.data.synth import (
+    MAX_CONSECUTIVE_LLM_ERRORS,
     build_query_prompt,
     load_records,
     parse_query_response,
@@ -135,6 +136,7 @@ class FailingLLM:
 
 
 def test_query_failure_counts_as_missing(tmp_path):
+    # Two scenarios in one batch are one failed call: not enough to stop the run.
     report = synthesize(
         [WEATHER, CHAT],
         query_llm=FailingLLM(),
@@ -144,4 +146,78 @@ def test_query_failure_counts_as_missing(tmp_path):
         spent_usd=lambda: 0.0,
         budget_usd=1.0,
     )
-    assert (report.written, report.missing_queries) == (0, 2)
+    assert (report.written, report.missing_queries, report.stopped) == (0, 2, "complete")
+
+
+def test_persistent_query_failures_stop_the_run(tmp_path):
+    report = synthesize(
+        [WEATHER, CLARIFY, CHAT, BROKEN],
+        query_llm=FailingLLM(),
+        teacher=ScriptedLLM([]),
+        out_path=tmp_path / "raw.jsonl",
+        batch_size=1,
+        spent_usd=lambda: 0.0,
+        budget_usd=1.0,
+    )
+    assert report.stopped == "llm_error"
+    assert report.missing_queries == MAX_CONSECUTIVE_LLM_ERRORS == 3
+
+
+def all_queries(*scenarios):
+    return ScriptedLLM([queries(*[(s.id, f"{s.id} 明天台中會下雨嗎") for s in scenarios])])
+
+
+def test_teacher_llm_errors_are_not_recorded_and_stop_the_run(tmp_path):
+    out = tmp_path / "raw.jsonl"
+    batch = [WEATHER, CLARIFY, CHAT, BROKEN]
+    report = synthesize(
+        batch,
+        query_llm=all_queries(*batch),
+        teacher=FailingLLM(),
+        out_path=out,
+        batch_size=10,
+        spent_usd=lambda: 0.0,
+        budget_usd=1.0,
+    )
+    assert (report.written, report.llm_errors, report.stopped) == (0, 3, "llm_error")
+    assert load_records(out) == []
+
+
+class FlakyLLM:
+    """Raises LLMError on the first call, then plays `replies`."""
+
+    def __init__(self, replies):
+        self.inner, self.failed = ScriptedLLM(replies), False
+
+    def complete(self, messages):
+        if not self.failed:
+            self.failed = True
+            raise LLMError("transient")
+        return self.inner.complete(messages)
+
+
+def test_transient_teacher_failure_is_skipped_and_retried_later(tmp_path):
+    out = tmp_path / "raw.jsonl"
+    report = synthesize(
+        [CHAT, WEATHER],
+        query_llm=all_queries(CHAT, WEATHER),
+        teacher=FlakyLLM([WEATHER_CALL, "明天臺中多雲。"]),
+        out_path=out,
+        batch_size=10,
+        spent_usd=lambda: 0.0,
+        budget_usd=1.0,
+    )
+    assert (report.written, report.llm_errors, report.stopped) == (1, 1, "complete")
+    assert [r["scenario"]["id"] for r in load_records(out)] == ["s00001"]
+    # The failed scenario is still undone, so a rerun asks for it again.
+    report2 = synthesize(
+        [CHAT, WEATHER],
+        query_llm=all_queries(CHAT),
+        teacher=ScriptedLLM(["你好！"]),
+        out_path=out,
+        batch_size=10,
+        spent_usd=lambda: 0.0,
+        budget_usd=1.0,
+    )
+    assert (report2.already_done, report2.written) == (1, 1)
+    assert [r["scenario"]["id"] for r in load_records(out)] == ["s00001", "s00003"]

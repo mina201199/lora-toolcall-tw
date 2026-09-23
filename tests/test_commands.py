@@ -63,6 +63,7 @@ def test_pilot_writes_records_ledger_and_projection(fake_gpt, tmp_path, capsys):
     assert ledger["spent_usd"] > 0 and ledger["runs"][0]["written"] == 20
     printed = capsys.readouterr().out
     assert "keep rate" in printed and "projection for train_target=3000" in printed
+    assert "llm errors 0" in printed.splitlines()[0]
     assert {c.model for c in fake_gpt.instances} == {"gpt-6-sol"}
 
 
