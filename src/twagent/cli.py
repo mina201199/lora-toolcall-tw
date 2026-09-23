@@ -10,7 +10,7 @@ import argparse
 import json
 import sys
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from twagent.agent import run_agent
@@ -21,6 +21,7 @@ from twagent.prompting import build_system_prompt
 from twagent.tools.mock import MockTools
 
 DEFAULT_CONFIG = Path("configs/default.yaml")
+TAIPEI = timezone(timedelta(hours=8))
 
 
 def _check_cases(args: argparse.Namespace) -> int:
@@ -43,7 +44,7 @@ def _chat(args: argparse.Namespace) -> int:
         max_tokens=cfg.llm.max_tokens,
         timeout_s=cfg.llm.timeout_s,
     )
-    today = date.fromisoformat(args.today) if args.today else date.today()
+    today = date.fromisoformat(args.today) if args.today else datetime.now(TAIPEI).date()
     result = run_agent(
         [{"role": "user", "content": args.message}],
         llm=llm,
@@ -61,6 +62,15 @@ def _chat(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles often default to a legacy code page (e.g. cp950) that
+    # cannot encode most of what this CLI prints (Traditional Chinese, emoji).
+    # Force UTF-8 on stdout/stderr where the stream supports it (redirected
+    # output and non-Windows platforms may not have `reconfigure`).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(prog="twagent")
     sub = parser.add_subparsers(dest="command", required=True)
 

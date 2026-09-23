@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import twagent.cli as cli
@@ -37,3 +38,20 @@ def test_chat_runs_agent_with_mock_tools(monkeypatch, capsys):
     assert out["stopped_reason"] == "answer"
     assert out["tool_calls"][0]["name"] == "get_weather"
     assert "2026-09-23（星期三）" in scripted.calls[0][0]["content"]
+
+
+def test_chat_defaults_to_taipei_date_when_today_omitted(monkeypatch, capsys):
+    # 2026-09-23T20:00 UTC is already 2026-09-24T04:00 in Taipei (UTC+8): if
+    # `main` used naive local/UTC time instead of Asia/Taipei, this would
+    # pick the wrong day.
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc).astimezone(tz)
+
+    scripted = ScriptedLLM(["你好"])
+    monkeypatch.setattr(cli, "OpenAICompatClient", lambda *a, **k: scripted)
+    monkeypatch.setattr(cli, "datetime", FrozenDateTime)
+    code = cli.main(["chat", "嗨", "--config", CONFIG, "--json"])
+    assert code == 0
+    assert "2026-09-24" in scripted.calls[0][0]["content"]
