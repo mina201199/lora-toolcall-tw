@@ -11,7 +11,7 @@ def test_synth_section_and_prices():
     cfg = load_config(ROOT / "configs" / "default.yaml")
     assert cfg.synth.model == "gpt-6-sol"
     assert cfg.synth.fallback_model == "gpt-6-luna"
-    assert cfg.synth.budget_usd == 15.0
+    assert cfg.synth.budget_usd == 5.0
     assert cfg.synth.reasoning_effort == "none"
     price = cfg.synth.prices["gpt-6-sol"]
     assert (price.input, price.output, price.cache_read, price.cache_write) == (2.0, 10.0, 0.2, 2.5)

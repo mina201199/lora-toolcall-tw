@@ -44,7 +44,7 @@
 | 工具呼叫格式 | Qwen 原生 chat template 的 `<tool_call>{...}</tool_call>` 格式 |
 | 訓練 | Unsloth QLoRA，Kaggle（每週 30 小時 T4）或 Colab 免費 T4，fp16（T4 不支援 bf16） |
 | 部署 | 合併 LoRA → GGUF → 量化；本機 llama.cpp（`llama-server`）＋ FastAPI ＋ Docker |
-| 資料 | OpenAI API（GPT）合成，預算 5–15 美元；先小批量實測成本再放大 |
+| 資料 | OpenAI API（GPT）合成，預算上限 5 美元（使用者 2026-09-23 設定）；先小批量實測成本再放大 |
 | 場景 | 台灣生活助理：天氣、高鐵、台鐵、YouBike、發票、行事曆 |
 | 範圍 | 完整版，4 週 |
 | 約束解碼 | llama.cpp GBNF 語法約束，作為**對照實驗**而非預設 |
@@ -168,9 +168,9 @@ lora-toolcall-tw/
 7. **分組切分**（見 5.3）。
 8. **格式化**：`render.py` 自行渲染 Qwen chat 文字並標記只訓練 assistant 段落；以 `tests/fixtures/` 的官方模板輸出驗證逐字相同。合成測試集輸出成 `cases.py` 格式。
 
-- 產生器與老師模型：預設 `gpt-6-sol`（`reasoning_effort: none`）；先試算 50 筆，推估總成本超過 15 美元則改用 `gpt-6-luna`；兩者都超過時把 `train_target` 降到預算允許的量（最低 2,000 筆），仍不夠就停下來和使用者討論。
+- 產生器與老師模型：預設 `gpt-6-sol`（`reasoning_effort: none`）；先試算 50 筆，推估總成本超過 5 美元則改用 `gpt-6-luna`；兩者都超過時把 `train_target` 降到預算允許的量（最低 2,000 筆），仍不夠就停下來和使用者討論。
 - 老師連續 3 次 LLM 錯誤就停止（出錯的情境不寫入、可重跑補上）；輸出檔最後一行若寫到一半，續跑前自動截掉。
-- 花費每批寫進 `<輸出檔>.cost.json`（原子寫入），可跨多次續跑累計；試算花費也算在 15 美元上限內；統計與丟棄原因寫進 `data/synthetic/data_report.json`，摘要寫進 `docs/data-report.md`。
+- 花費每批寫進 `<輸出檔>.cost.json`（原子寫入），可跨多次續跑累計；試算花費也算在 5 美元上限內；統計與丟棄原因寫進 `data/synthetic/data_report.json`，摘要寫進 `docs/data-report.md`。
 
 ### 5.3 切分與洩漏護欄
 
