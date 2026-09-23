@@ -77,15 +77,20 @@ def test_combos_only_use_real_tools():
 
 
 def test_date_expr_only_for_dated_tools_and_resolvable():
+    dated_tools = {"get_weather", "search_thsr", "search_tra", "calendar_add", "calendar_list"}
     for s in build_scenarios(500, seed=2):
-        if s.date_expr is None:
-            assert not (
-                {"get_weather", "search_thsr", "search_tra", "calendar_add", "calendar_list"}
-                & set(s.tools)
-            )
-        else:
+        dated = bool(dated_tools & set(s.tools)) and s.category != "clarify"
+        assert (s.date_expr is not None) == dated, s
+        if s.date_expr is not None:
             assert s.date_expr in DATE_EXPRS
             resolve_date_expr(s.date_expr, s.today)  # must not raise
+
+
+def test_clarify_never_gets_a_date_expr():
+    # The clarify brief asks the user to leave a required detail out -- often
+    # the date -- so forcing a date phrase would contradict it.
+    clarify = [s for s in build_scenarios(500, seed=2) if s.category == "clarify"]
+    assert clarify and all(s.date_expr is None for s in clarify)
 
 
 def test_category_specific_fields():

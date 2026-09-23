@@ -152,7 +152,8 @@ def build_scenarios(total: int, seed: int) -> list[Scenario]:
         own = cells[category]
         tools, kind, style = own[used[category] % len(own)]
         used[category] += 1
-        dated = any(t in DATED_TOOLS for t in tools)
+        # clarify asks the user to leave a required detail (often the date) out.
+        dated = category != "clarify" and any(t in DATED_TOOLS for t in tools)
         out.append(
             Scenario(
                 id=f"s{len(out):05d}",
