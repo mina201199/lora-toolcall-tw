@@ -11,6 +11,13 @@ Evaluation and the server both call `run_agent`. Failure policy:
                           -> switch to `fallback` if one was given, else stop
                              with a fixed apology
 - more than `max_steps` LLM calls -> stop
+
+`parse_retries` and `schema_retries` are budgets *per request*: cumulative
+across the whole `run_agent` call, not per turn. A successful correction does
+not refill the budget -- e.g. with `schema_retries=1`, a schema error followed
+by a successful correction followed by a second, unrelated schema error still
+gives up on that second error. The budgets are reset only when switching to
+`fallback` (a fresh model gets a fresh budget).
 """
 
 from __future__ import annotations

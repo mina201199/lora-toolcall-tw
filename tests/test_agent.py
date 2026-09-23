@@ -176,6 +176,45 @@ def test_tool_error_is_reported_not_replaced():
     assert [e.type for e in r.trace] == ["llm_output", "tool_error", "llm_output"]
 
 
+def test_schema_retry_budget_is_cumulative_across_turns():
+    # Ledger ruling (Task 9): parse_retries/schema_retries are budgets *per
+    # request*, cumulative across the whole run_agent call, not reset after a
+    # successful correction. With schema_retries=1, a schema error, then a
+    # successful correction, then a second (unrelated) schema error must give
+    # up on that second error -- it does not get its own fresh budget.
+    wrong_weather = call("get_weather", city="台中", date="明天")
+    wrong_invoice = call("check_invoice", number="123", period="115-07-08")
+    llm = ScriptedLLM([wrong_weather, WEATHER, wrong_invoice])
+    r = run(llm, cfg=AgentConfig(max_steps=5, parse_retries=1, schema_retries=1))
+    assert r.stopped_reason == "schema_failure" and r.final_text == FAILURE_MESSAGE
+
+
+def test_parse_retries_zero_gives_up_on_first_parse_error():
+    bad = "<tool_call>oops</tool_call>"
+    llm = ScriptedLLM([bad])
+    r = run(llm, cfg=AgentConfig(max_steps=5, parse_retries=0, schema_retries=2))
+    assert r.stopped_reason == "parse_failure" and r.final_text == FAILURE_MESSAGE
+    assert len(llm.calls) == 1  # no retry prompt was ever sent
+
+
+def test_parse_retries_zero_still_escalates_to_fallback():
+    bad = "<tool_call>oops</tool_call>"
+    fallback = ScriptedLLM(["你好"])
+    r = run(
+        ScriptedLLM([bad]),
+        fallback=fallback,
+        cfg=AgentConfig(max_steps=5, parse_retries=0, schema_retries=2),
+    )
+    assert r.stopped_reason == "answer" and r.used_fallback
+
+
+def test_schema_failure_escalates_to_fallback():
+    wrong = call("get_weather", city="台中", date="明天")
+    fallback = ScriptedLLM([WEATHER, "多雲"])
+    r = run(ScriptedLLM([wrong] * 3), fallback=fallback)
+    assert r.stopped_reason == "answer" and r.used_fallback
+
+
 def test_llm_error_without_fallback():
     r = run(FailingLLM())
     assert r.stopped_reason == "llm_error" and r.final_text == FAILURE_MESSAGE
