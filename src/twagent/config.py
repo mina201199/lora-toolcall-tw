@@ -46,8 +46,8 @@ class ModelPrice:
 
 @dataclass(frozen=True)
 class SynthConfig:
-    model: str = "gpt-6-sol"
-    fallback_model: str = "gpt-6-luna"
+    model: str = "gpt-6-luna"
+    fallback_model: str = "gpt-6-sol"
     budget_usd: float = 5.0
     train_target: int = 3000
     query_batch_size: int = 10

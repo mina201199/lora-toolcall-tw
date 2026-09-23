@@ -65,7 +65,7 @@ def test_pilot_writes_records_ledger_and_projection(fake_gpt, tmp_path, capsys):
     printed = capsys.readouterr().out
     assert "keep rate" in printed and "projection for train_target=3000" in printed
     assert "llm errors 0" in printed.splitlines()[0]
-    assert {c.model for c in fake_gpt.instances} == {"gpt-6-sol"}
+    assert {c.model for c in fake_gpt.instances} == {"gpt-6-luna"}
     assert [c.kwargs["prompt_cache_key"] for c in fake_gpt.instances] == ["twagent-synth"] * 2
 
 
@@ -169,14 +169,14 @@ def test_model_override(fake_gpt, tmp_path):
             "--pilot",
             "5",
             "--model",
-            "gpt-6-luna",
+            "gpt-6-sol",
             "--out",
             str(out),
             "--config",
             CONFIG,
         ]
     )
-    assert {c.model for c in fake_gpt.instances} == {"gpt-6-luna"}
+    assert {c.model for c in fake_gpt.instances} == {"gpt-6-sol"}
 
 
 def test_build_dataset_end_to_end(fake_gpt, tmp_path, capsys):
@@ -191,7 +191,7 @@ def test_build_dataset_end_to_end(fake_gpt, tmp_path, capsys):
     # is valid for clarify and no_tool scenarios and nothing else.
     assert report["kept"] > 0
     assert set(report["splits"]["train"]["by_category"]) == {"clarify", "no_tool"}
-    assert report["config"]["synth"]["model"] == "gpt-6-sol"
+    assert report["config"]["synth"]["model"] == "gpt-6-luna"
     for name in ("train.jsonl", "valid.jsonl", "test_cases.jsonl"):
         assert (tmp_path / "ds" / name).exists()
 

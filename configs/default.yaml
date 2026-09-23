@@ -22,9 +22,9 @@ tools:
 
 synth:
   # Teacher model for synthetic data (spec §5.2). Run a 50-sample pilot first;
-  # if the projected cost exceeds budget_usd, switch to fallback_model.
-  model: gpt-6-sol
-  fallback_model: gpt-6-luna
+  # fallback_model is only for when the pilot's quality is not good enough.
+  model: gpt-6-luna
+  fallback_model: gpt-6-sol   # quality fallback only; ~20x the price
   budget_usd: 5.0         # user cap (2026-09-23); pilots count against it
   train_target: 3000      # training examples wanted after filtering and splitting
   query_batch_size: 10    # user messages generated per request
