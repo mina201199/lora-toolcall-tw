@@ -198,3 +198,14 @@ def test_build_dataset_empty_raw(tmp_path, capsys):
     assert (
         cli.main(["build-dataset", "--raw", str(tmp_path / "none.jsonl"), "--config", CONFIG]) == 1
     )
+
+
+def test_projection_verdict_uses_the_effective_budget(fake_gpt, tmp_path, capsys):
+    out = tmp_path / "p.jsonl"
+    argv = ["synth", "--pilot", "20", "--out", str(out), "--config", CONFIG]
+    cli.main([*argv, "--budget", "1000"])
+    [projection] = [line for line in capsys.readouterr().out.splitlines() if "projection" in line]
+    assert projection.endswith("(within budget $1000.00)")
+    cli.main([*argv, "--budget", "0.0000001"])  # the pilot is already complete: no new spend
+    [projection] = [line for line in capsys.readouterr().out.splitlines() if "projection" in line]
+    assert projection.endswith("(EXCEEDS budget $0.00)")

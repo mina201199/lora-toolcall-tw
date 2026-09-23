@@ -152,9 +152,9 @@ def cmd_synth(args: argparse.Namespace) -> int:
     if keep_rate > 0:
         needed = math.ceil(cfg.train_target / TRAIN_SHARE / keep_rate)
         projected = needed * per_record
-        verdict = "within budget" if projected <= cfg.budget_usd else "EXCEEDS budget"
+        verdict = "within budget" if projected <= budget else "EXCEEDS budget"
         print(f"projection for train_target={cfg.train_target}: {needed} raw records, "
-              f"~${projected:.2f} with {model} ({verdict} ${cfg.budget_usd:.2f})")  # fmt: skip
+              f"~${projected:.2f} with {model} ({verdict} ${budget:.2f})")  # fmt: skip
     return 0
 
 
