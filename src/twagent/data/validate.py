@@ -80,13 +80,14 @@ def _category_problems(s: Scenario, result: dict[str, Any]) -> list[str]:
 def _date_problem(s: Scenario, result: dict[str, Any]) -> str | None:
     if not s.date_expr:
         return None
+    expected = resolve_date_expr(s.date_expr, s.today).isoformat()
     for call in result["tool_calls"]:
         args = call["arguments"]
         got = args.get("date") or (args.get("start") or "")[:10] or None
         if got is None:
             continue
-        expected = resolve_date_expr(s.date_expr, s.today).isoformat()
-        return None if got == expected else f"date: {s.date_expr} should be {expected}, got {got}"
+        if got != expected:
+            return f"date: {s.date_expr} should be {expected}, got {got}"
     return None
 
 

@@ -59,6 +59,15 @@ def test_sequential_needs_two_turns_in_order():
     assert validate_record(same_turn)[0].startswith("sequential:")
 
 
+def test_wrong_date_on_second_call_is_rejected():
+    thsr = call("search_thsr", origin="臺北", destination="臺南", date="2026-03-05")
+    bad_cal = call(
+        "calendar_add", title="高鐵去臺南", start="2026-03-06T08:00", end="2026-03-06T10:00"
+    )
+    rec = record("sequential", ["search_thsr", "calendar_add"], [thsr, bad_cal, "排好了。"])
+    assert validate_record(rec) == ["date: 明天 should be 2026-03-05, got 2026-03-06"]
+
+
 def test_clarify_must_ask_and_not_call():
     assert (
         validate_record(
