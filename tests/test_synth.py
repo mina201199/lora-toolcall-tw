@@ -221,3 +221,43 @@ def test_transient_teacher_failure_is_skipped_and_retried_later(tmp_path):
     )
     assert (report2.already_done, report2.written) == (1, 1)
     assert [r["scenario"]["id"] for r in load_records(out)] == ["s00001", "s00003"]
+
+
+def test_truncated_last_line_is_repaired_before_resuming(tmp_path):
+    # A hard kill mid-write leaves a partial last line behind.
+    out = tmp_path / "raw.jsonl"
+    full = run_trajectory(
+        WEATHER, "明天台中會下雨嗎", ScriptedLLM([WEATHER_CALL, "明天臺中多雲。"])
+    )
+    partial = '{"scenario": {"id": "s00003", "category": "no_'
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(json.dumps(full, ensure_ascii=False) + "\n" + partial)
+    report = synthesize(
+        [WEATHER, CHAT],
+        query_llm=ScriptedLLM([queries(("s00003", "你好呀"))]),
+        teacher=ScriptedLLM(["你好！有什麼可以幫你？"]),
+        out_path=out,
+        batch_size=10,
+        spent_usd=lambda: 0.0,
+        budget_usd=1.0,
+    )
+    assert report.repaired_bytes == len(partial.encode("utf-8"))
+    assert (report.already_done, report.written) == (1, 1)
+    text = out.read_text(encoding="utf-8")
+    assert text.endswith("\n")
+    assert [r["scenario"]["id"] for r in load_records(out)] == ["s00001", "s00003"]
+
+
+def test_intact_file_is_not_touched(tmp_path):
+    out = tmp_path / "raw.jsonl"
+    out.write_text("", encoding="utf-8")
+    report = synthesize(
+        [],
+        query_llm=ScriptedLLM([]),
+        teacher=ScriptedLLM([]),
+        out_path=out,
+        batch_size=10,
+        spent_usd=lambda: 0.0,
+        budget_usd=1.0,
+    )
+    assert report.repaired_bytes == 0

@@ -97,6 +97,9 @@ def cmd_synth(args: argparse.Namespace) -> int:
     )
     ledger_path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    if report.repaired_bytes:
+        print(f"WARNING repaired {out}: dropped a partial last line ({report.repaired_bytes} "
+              "bytes) left by an interrupted run; its scenario counts as not done")  # fmt: skip
     records = load_records(out)
     kept = sum(1 for r in records if not validate_record(r))
     keep_rate = kept / len(records) if records else 0.0

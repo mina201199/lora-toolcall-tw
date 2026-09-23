@@ -124,6 +124,7 @@ class SynthReport:
     already_done: int = 0
     missing_queries: int = 0
     llm_errors: int = 0  # teacher trajectories lost to an API error (not written)
+    repaired_bytes: int = 0  # partial last line dropped from out_path before resuming
     stopped: str = "complete"  # complete | budget | llm_error
 
 
@@ -132,6 +133,25 @@ def load_records(path: Path) -> list[dict[str, Any]]:
         return []
     with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+def repair_partial_tail(path: Path) -> int:
+    """Drop an unterminated last line (a write cut off by a hard kill).
+
+    Truncates `path` back to just after its last newline, or to empty if it
+    has none, and returns the number of bytes dropped. Records are written
+    one line at a time with a trailing newline, so only the last line can be
+    partial; appending after it would glue the next record onto the fragment.
+    """
+    if not path.exists():
+        return 0
+    with open(path, "r+b") as f:
+        data = f.read()
+        if not data or data.endswith(b"\n"):
+            return 0
+        keep = data.rfind(b"\n") + 1  # 0 when there is no newline at all
+        f.truncate(keep)
+    return len(data) - keep
 
 
 def _chunks(items: list[Scenario], size: int) -> Iterable[list[Scenario]]:
@@ -152,10 +172,12 @@ def synthesize(
     """Append one record per scenario to `out_path`.
 
     Stops before a batch would start at or past the budget, or after
-    `MAX_CONSECUTIVE_LLM_ERRORS` LLM failures in a row.
+    `MAX_CONSECUTIVE_LLM_ERRORS` LLM failures in a row. A partial last line
+    left by a killed run is removed first, so that scenario is redone.
     """
+    repaired = repair_partial_tail(out_path)
     done = {r["scenario"]["id"] for r in load_records(out_path)}
-    report = SynthReport(already_done=len(done))
+    report = SynthReport(already_done=len(done), repaired_bytes=repaired)
     todo = [s for s in scenarios if s.id not in done]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     failures = 0  # consecutive LLM failures: query calls or teacher trajectories

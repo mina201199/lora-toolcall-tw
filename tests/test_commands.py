@@ -67,6 +67,14 @@ def test_pilot_writes_records_ledger_and_projection(fake_gpt, tmp_path, capsys):
     assert {c.model for c in fake_gpt.instances} == {"gpt-6-sol"}
 
 
+def test_repaired_partial_line_is_reported(fake_gpt, tmp_path, capsys):
+    out = tmp_path / "pilot.jsonl"
+    out.write_text('{"scenario": {"id": "s0', encoding="utf-8")
+    assert cli.main(["synth", "--pilot", "5", "--out", str(out), "--config", CONFIG]) == 0
+    assert "WARNING repaired" in capsys.readouterr().out
+    assert len(out.read_text(encoding="utf-8").splitlines()) == 5
+
+
 def test_resumed_run_accumulates_spend(fake_gpt, tmp_path):
     out = tmp_path / "raw.jsonl"
     cli.main(["synth", "--total", "10", "--out", str(out), "--config", CONFIG])
