@@ -1,0 +1,84 @@
+"""`twagent` command line.
+
+twagent check-cases data/handwritten_test.jsonl
+twagent chat "明天台中會下雨嗎" [--today 2026-09-23] [--base-url URL] [--json]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections import Counter
+from datetime import date
+from pathlib import Path
+
+from twagent.agent import run_agent
+from twagent.cases import load_cases
+from twagent.config import load_config
+from twagent.llm import OpenAICompatClient
+from twagent.prompting import build_system_prompt
+from twagent.tools.mock import MockTools
+
+DEFAULT_CONFIG = Path("configs/default.yaml")
+
+
+def _check_cases(args: argparse.Namespace) -> int:
+    cases, errors = load_cases(args.path)
+    for e in errors:
+        print(f"ERROR {e}")
+    counts = Counter(c.category for c in cases)
+    print(
+        f"{len(cases)} valid case(s): " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+    )
+    return 1 if errors else 0
+
+
+def _chat(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
+    llm = OpenAICompatClient(
+        args.base_url or cfg.llm.base_url,
+        cfg.llm.model,
+        temperature=cfg.llm.temperature,
+        max_tokens=cfg.llm.max_tokens,
+        timeout_s=cfg.llm.timeout_s,
+    )
+    today = date.fromisoformat(args.today) if args.today else date.today()
+    result = run_agent(
+        [{"role": "user", "content": args.message}],
+        llm=llm,
+        tools=MockTools(),
+        system_prompt=build_system_prompt(today),
+        config=cfg.agent,
+    )
+    if args.json:
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    for event in result.trace:
+        print(f"[{event.type}] {json.dumps(event.data, ensure_ascii=False)}")
+    print(f"\n({result.stopped_reason}) {result.final_text}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="twagent")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("check-cases", help="validate a test-case JSONL file")
+    p.add_argument("path", type=Path)
+    p.set_defaults(func=_check_cases)
+
+    p = sub.add_parser("chat", help="run one message through the agent (mock tools)")
+    p.add_argument("message")
+    p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    p.add_argument("--today", help="YYYY-MM-DD; defaults to the real date")
+    p.add_argument("--base-url", help="override llm.base_url")
+    p.add_argument("--json", action="store_true", help="print the full result as JSON")
+    p.set_defaults(func=_chat)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
