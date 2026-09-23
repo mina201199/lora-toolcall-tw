@@ -188,6 +188,12 @@ def _semantic_errors(name: str, arguments: dict[str, Any]) -> list[str]:
                 datetime.fromisoformat(value)
             except ValueError:
                 out.append(f"{prop}: {value} is not a real date/time")
+        elif schema is TIME:
+            # The pattern's `$` also matches before a trailing newline.
+            try:
+                datetime.strptime(value, "%H:%M")
+            except ValueError:
+                out.append(f"{prop}: {value!r} is not a valid HH:MM time")
     if out:
         return out
     if name == "calendar_add":
