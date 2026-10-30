@@ -3,8 +3,10 @@
 繁體中文 Function Calling Agent（臺灣生活助理）：用 QLoRA 微調小型 Qwen 模型，
 讓它把繁中自然語言可靠地轉成工具呼叫，量化後在 4 GB 顯卡（GTX 1050 Ti）上本機部署。
 
-> **狀態：進行中。** 硬體驗證與資料管線已完成；QLoRA 訓練、評估與部署尚未完成。
-> 本頁只列實際跑出來的數字，尚未完成的部分不填結果。
+> **目前進度：資料管線完成；QLoRA 微調、評估、量化部署尚未進行。**
+> repo 內還沒有訓練程式（沒有 Unsloth／PEFT／TRL 相依），也沒有微調模型或評估結果。
+> 另已完成硬體驗證：原始 Qwen3 模型可在 GTX 1050 Ti 上用 llama-server 執行。
+> 本頁只列 repo 內有紀錄的數字，尚未完成的部分不填結果。
 
 ## 架構
 
@@ -12,9 +14,9 @@
 訓練端（Kaggle / Colab T4）
   工具定義 → 老師模型合成對話軌跡 → 驗證過濾 → 去重 → 分組切分 → 訓練資料
                                                           ↓
-                                           Unsloth QLoRA 微調 Qwen3     ← 待完成
+                                           Unsloth QLoRA 微調 Qwen3     ← 尚未進行
                                                           ↓
-部署端（本機 GTX 1050 Ti）                      合併 → GGUF → 量化     ← 待完成
+部署端（本機 GTX 1050 Ti）                      合併 → GGUF → 量化     ← 尚未進行
   llama.cpp llama-server（Docker, CUDA）＋ twagent Agent 迴圈 ＋ mock 工具
 ```
 
@@ -25,9 +27,9 @@
 | 階段 | 狀態 | 內容 |
 |---|---|---|
 | 1. 基礎與硬體驗證 | ✅ 完成 | Agent 迴圈、工具 schema、mock 工具、相對日期換算、CLI；在 1050 Ti 上跑通 llama-server |
-| 2. 資料管線 | ✅ 完成 | 合成、驗證、去重、分組切分；正式合成已跑完 |
-| 3. QLoRA 訓練與評估 | ⏳ 待完成 | 與 B0（原始模型）、B1（few-shot）對照 |
-| 4. 部署與 demo | ⏳ 待完成 | FastAPI ＋ Docker Compose，原廠 vs 微調並排比較 |
+| 2. 資料管線 | ✅ 完成 | 合成、驗證、去重、分組切分的程式與測試；正式合成資料未納入版控（見下） |
+| 3. QLoRA 訓練與評估 | ⏳ 尚未進行 | repo 內尚無訓練程式；規劃與 B0（原始模型）、B1（few-shot）對照 |
+| 4. 部署與 demo | ⏳ 尚未進行 | 規劃 GGUF 量化、FastAPI ＋ Docker Compose，原廠 vs 微調並排比較 |
 
 ## 已完成的實測結果
 
@@ -44,12 +46,10 @@
 
 ### 合成資料（詳見 [`docs/data-report.md`](docs/data-report.md)）
 
-| 項目 | 數字 |
-|---|---|
-| 老師模型產生的原始軌跡 | 6,446 筆，花費 $0.80（預算上限 $5） |
-| 驗證通過並去重後 | 3,476 筆（退件 2,439、近似重複 531） |
-| 切分（依情境分組，避免洩漏） | train 2,645 / valid 403 / test 428 |
-| 手寫測試集 | 100 筆 |
+**正式合成資料未納入版控。** `data/synthetic/` 列在 `.gitignore`，repo 內也沒有正式合成的執行紀錄，
+因此這裡不列正式合成、驗證後與切分後的筆數；數據待資料重建後再補。
+repo 內有紀錄的是兩次各 50 筆的老師模型試算（保留率、花費與退件原因見 `docs/data-report.md`），
+以及 100 筆手寫測試題（`data/handwritten_test.jsonl`）。
 
 資料管線的設計重點：
 
@@ -77,5 +77,15 @@ twagent synth ...            # 用老師模型合成軌跡（需要 OPENAI_API_K
 twagent build-dataset ...    # 驗證、去重、切分、格式化
 twagent check-cases ...      # 檢查測試案例檔
 ```
+
+## 環境變數
+
+只有 `twagent synth` 需要環境變數；測試、`build-dataset`、`check-cases` 與 `chat` 都不需要。
+
+| 變數 | 用途 |
+|---|---|
+| `OPENAI_API_KEY` | `twagent synth` 呼叫 OpenAI 老師模型合成資料時使用。可設在環境變數，或寫在執行目錄的 `.env`（已列在 `.gitignore`）；`.env` 不會覆蓋已設定的環境變數。 |
+
+`chat` 連線的 llama-server 位址（`llm.base_url`）在 `configs/default.yaml` 設定，不從環境變數讀取。
 
 設計規格與實作計畫：`docs/superpowers/specs/`、`docs/superpowers/plans/`。
