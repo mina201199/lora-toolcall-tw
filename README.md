@@ -86,6 +86,10 @@ twagent check-cases ...      # 檢查測試案例檔
 |---|---|
 | `OPENAI_API_KEY` | `twagent synth` 呼叫 OpenAI 老師模型合成資料時使用。可設在環境變數，或寫在執行目錄的 `.env`（已列在 `.gitignore`）；`.env` 不會覆蓋已設定的環境變數。 |
 
-`chat` 連線的 llama-server 位址（`llm.base_url`）在 `configs/default.yaml` 設定，不從環境變數讀取。
+可複製 `.env.example` 為 `.env` 再填值。`chat` 連線的 llama-server 位址（`llm.base_url`）在 `configs/default.yaml` 設定，不從環境變數讀取。
 
 設計規格與實作計畫：`docs/superpowers/specs/`、`docs/superpowers/plans/`。
+
+## 授權
+
+MIT，見 [LICENSE](LICENSE)。
